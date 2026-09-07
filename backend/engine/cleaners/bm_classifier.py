@@ -167,3 +167,64 @@ def classify_bm_group(
                 return bm_value
 
     return "Outros"
+
+
+# ---------------------------------------------------------------------------
+# Classificação determinística de RelintType (mesmo padrão de 2 camadas acima)
+# ---------------------------------------------------------------------------
+
+_RELINT_TYPE_RULES: "list[tuple[str, list[str]]]" = [
+    (
+        "Disk Denúncia",
+        [
+            r"dis[qk]ue?\s+den[uú]ncia",
+            r"repasse\s+de\s+den[uú]ncia",
+            r"den[uú]ncia\s+an[oô]nima",
+        ],
+    ),
+    (
+        "Resposta a PB",
+        [
+            r"resposta\s+(?:a[o]?\s+)?pb\b",
+            r"resposta\s+ao?\s+pedido\s+de\s+busca",
+            r"\bpb\s*n?[º°]?\s*\d+",
+        ],
+    ),
+]
+
+
+def classify_relint_type(
+    filename: str = "",
+    subject: str = "",
+    content: str = "",
+) -> str:
+    """
+    Classifica deterministicamente o RelintType (Disk Denúncia, Resposta a PB ou Ocorrência)
+    analisando o nome do arquivo, o assunto e o conteúdo — mesmo padrão de 2 camadas do
+    classify_bm_group(): filename+assunto primeiro (alta prioridade), conteúdo como fallback.
+
+    Vocabulário-gatilho previsível no assunto/nome do arquivo torna esse campo formulaico o
+    bastante para não precisar de LLM (ver docs/proposals/eliminacao-pass1-legado.md). Quando
+    nenhum gatilho de Disk Denúncia/Resposta a PB é encontrado, o documento é um boletim de
+    ocorrência comum — o caso majoritário — daí o fallback ser "Ocorrência", não "Outros"
+    (diferente de classify_bm_group(), onde "Outros" é o caso majoritário real).
+
+    Args:
+        filename: Nome do arquivo PDF de origem.
+        subject: Campo ASSUNTO extraído do RELINT.
+        content: Texto do histórico/conteúdo.
+    """
+    primary = f"{filename} {subject}".lower()
+    for type_value, patterns in _RELINT_TYPE_RULES:
+        for pattern in patterns:
+            if re.search(pattern, primary, re.IGNORECASE):
+                return type_value
+
+    secondary = (content or "").lower()
+    full_corpus = f"{primary} {secondary}"
+    for type_value, patterns in _RELINT_TYPE_RULES:
+        for pattern in patterns:
+            if re.search(pattern, full_corpus, re.IGNORECASE):
+                return type_value
+
+    return "Ocorrência"

@@ -1,8 +1,8 @@
 """
-Testes unitários para o classificador determinístico de BmGroup.
+Testes unitários para os classificadores determinísticos de BmGroup e RelintType.
 """
 import pytest
-from backend.engine.cleaners.bm_classifier import classify_bm_group
+from backend.engine.cleaners.bm_classifier import classify_bm_group, classify_relint_type
 
 
 class TestBmClassifier:
@@ -125,3 +125,60 @@ class TestBmClassifier:
             subject="Latrocínio - vítima fatal - droga"
         )
         assert result == "Homicídio"
+
+
+class TestRelintTypeClassifier:
+    """Testes de classificação determinística do RelintType (Disk Denúncia, Resposta a PB, Ocorrência)."""
+
+    # --- Resposta a PB (casos reais do dataset) ---
+    def test_resposta_pb_por_filename(self):
+        result = classify_relint_type(
+            filename="RELINT 004 - ADJ-INT- CI - Resposta PB 8843 - Informação sobre Desaparecimento.pdf"
+        )
+        assert result == "Resposta a PB"
+
+    def test_resposta_pb_colado_ao_numero(self):
+        result = classify_relint_type(
+            filename="RELINT 005 - ADJ-INT- CI - Resposta PB006 15 BPM - INFORMAÇÃO M.E.pdf"
+        )
+        assert result == "Resposta a PB"
+
+    def test_resposta_pb_por_conteudo(self):
+        result = classify_relint_type(
+            subject="Ocorrência policial",
+            content="Em resposta ao pedido de busca formulado pela unidade, informa-se que..."
+        )
+        assert result == "Resposta a PB"
+
+    # --- Disk Denúncia (caso real do dataset) ---
+    def test_disk_denuncia_por_filename(self):
+        result = classify_relint_type(
+            filename="RELINT 432 - ADJ-INT-CRIM - Repasse Disque Denúncia 123906-0070 - Outros, receptação em Seberi - RS.pdf"
+        )
+        assert result == "Disk Denúncia"
+
+    def test_disk_denuncia_grafia_alternativa(self):
+        result = classify_relint_type(subject="DISK DENÚNCIA ANÔNIMA - Tráfico de Drogas")
+        assert result == "Disk Denúncia"
+
+    # --- Ocorrência (fallback majoritário, não "Outros") ---
+    def test_ocorrencia_quando_nada_bate(self):
+        result = classify_relint_type(
+            filename="RELINT 015 - ADJ-INT- CRIM - Homicídio em Seberi - RS.pdf",
+            subject="Homicídio em Seberi - RS"
+        )
+        assert result == "Ocorrência"
+
+    def test_ocorrencia_e_o_fallback_nao_outros(self):
+        # Diferente de classify_bm_group: aqui o caso majoritário sem gatilho é "Ocorrência".
+        result = classify_relint_type(filename="qualquer.pdf", subject="", content="")
+        assert result == "Ocorrência"
+
+    # --- Prioridade: filename+assunto vence sobre conteúdo ---
+    def test_filename_prevalece_sobre_conteudo(self):
+        result = classify_relint_type(
+            filename="RELINT 432 - Repasse Disque Denúncia - Seberi - RS.pdf",
+            subject="Receptação em Seberi - RS",
+            content="Em resposta ao pedido de busca, nada mais consta."
+        )
+        assert result == "Disk Denúncia"

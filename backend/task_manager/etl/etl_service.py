@@ -18,7 +18,7 @@ from backend.engine.cleaners.text_cleaner import (
 )
 from backend.engine.extractors.llm.rules.base_rule import IncidentRule
 from backend.task_manager.registry.processed_registry import IProcessedRegistry
-from backend.engine.cleaners.bm_classifier import classify_bm_group
+from backend.engine.cleaners.bm_classifier import classify_bm_group, classify_relint_type
 
 class EtlService:
     """
@@ -244,6 +244,18 @@ class EtlService:
                     subject=response_dict.get("subject", ""),
                     content=final_content
                 )
+
+            # relint_type e main_fact são sempre 100% determinísticos/derivados, independente
+            # do motor: classify_relint_type() segue o mesmo padrão de 2 camadas de
+            # classify_bm_group(), e main_fact é o próprio resumo (mesma derivação que o
+            # DeterministicPipeline já usa) — nenhum dos dois precisa de julgamento da LLM.
+            response_dict["relint_type"] = classify_relint_type(
+                filename=filename,
+                subject=response_dict.get("subject", ""),
+                content=final_content
+            )
+            if not response_dict.get("main_fact"):
+                response_dict["main_fact"] = response_dict.get("summary", "")
 
             # 5. Filtragem e Enriquecimento Híbrido de Participantes (Sanitização + Anti-PM + Enriquecimento)
             from backend.engine.cleaners.text_cleaner import clean_person_name
