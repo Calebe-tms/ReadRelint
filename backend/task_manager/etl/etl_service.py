@@ -249,11 +249,16 @@ class EtlService:
             # do motor: classify_relint_type() segue o mesmo padrão de 2 camadas de
             # classify_bm_group(), e main_fact é o próprio resumo (mesma derivação que o
             # DeterministicPipeline já usa) — nenhum dos dois precisa de julgamento da LLM.
-            response_dict["relint_type"] = classify_relint_type(
-                filename=filename,
-                subject=response_dict.get("subject", ""),
-                content=final_content
-            )
+            # Guard "só preenche se vazio" em todos os 4 campos desta fase (aqui e nas duas
+            # linhas de date_of_fact/time_of_fact acima): nenhum pass, LLM ou determinístico,
+            # define esses 4 campos hoje — mas o guard garante que, se algum dia um deles
+            # passar a resolvê-los, esta fase nunca sobrescreve nem perde tempo recalculando.
+            if not response_dict.get("relint_type"):
+                response_dict["relint_type"] = classify_relint_type(
+                    filename=filename,
+                    subject=response_dict.get("subject", ""),
+                    content=final_content
+                )
             if not response_dict.get("main_fact"):
                 response_dict["main_fact"] = response_dict.get("summary", "")
 
