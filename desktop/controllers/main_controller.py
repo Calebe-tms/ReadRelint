@@ -55,7 +55,7 @@ class MainController:
         # Fixo em RelintRule (schema genérico) DE PROPÓSITO — não é um TODO pendente.
         # As 7 classes Rule especializadas (backend/engine/extractors/llm/rules/) NÃO devem ser
         # ativadas aqui: a extração de especialidade já é resolvida de forma independente por
-        # classify_bm_group() + SpecialtyExtractor (ver ADR-094/095 em .ai_context). Reativar essas
+        # classify_bm_group() + SpecialtyExtractor (ver ADR-0094/ADR-0095 em docs/adr/). Reativar essas
         # Rules reintroduziria o schema monolítico legado em paralelo ao pipeline multi-pass atual.
         self.active_rule = RelintRule()
         

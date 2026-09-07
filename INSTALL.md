@@ -1,20 +1,20 @@
-# Guia de Instalação e Configuração do Sistema ETL de BOs
+# Guia de Instalação e Configuração do ReadRelint
 
-Este documento descreve o passo a passo necessário para clonar, configurar e executar a aplicação em uma nova máquina a partir do repositório no GitHub.
+Este documento descreve o passo a passo para clonar, configurar e executar o ReadRelint em uma nova máquina Windows.
 
 ---
 
 ## 📋 Pré-requisitos
 
-Antes de iniciar, certifique-se de que a máquina de destino possui os seguintes softwares instalados:
-
 1. **Python (versão 3.10 ou superior)**
    * Baixe em: [python.org](https://www.python.org/downloads/)
-   * **Importante (Windows):** Durante a instalação, marque a caixa **"Add Python to PATH"** (Adicionar Python às variáveis de ambiente).
-2. **Ollama**
-   * Baixe e instale o Ollama em: [ollama.com](https://ollama.com/)
-   * O Ollama é necessário para rodar o modelo de inteligência artificial de forma local e offline na máquina.
-3. **Git**
+   * **Importante (Windows):** durante a instalação, marque a caixa **"Add Python to PATH"**.
+2. **Node.js (LTS) e npm**
+   * Baixe em: [nodejs.org](https://nodejs.org/) — necessário para o dashboard web (SvelteKit).
+3. **Ollama**
+   * Baixe e instale em: [ollama.com](https://ollama.com/)
+   * Necessário para rodar o modelo de IA localmente (extração cognitiva 100% offline). Sem o Ollama ativo, o sistema opera automaticamente no motor determinístico (regex/spaCy), sem perda de funcionalidade.
+4. **Git**
    * Baixe e instale em: [git-scm.com](https://git-scm.com/)
 
 ---
@@ -22,67 +22,76 @@ Antes de iniciar, certifique-se de que a máquina de destino possui os seguintes
 ## 🛠️ Passo a Passo de Instalação
 
 ### 1. Clonar o Repositório
-Abra o terminal (Prompt de Comando ou PowerShell no Windows, Terminal no Linux/macOS) e execute:
 ```bash
 git clone <URL_DO_SEU_REPOSITORIO_NO_GITHUB>
 cd ReadRelint
 ```
-*(Substitua `<URL_DO_SEU_REPOSITORIO_NO_GITHUB>` pelo link de clone gerado no GitHub).*
 
 ### 2. Baixar o Modelo de IA no Ollama
-Certifique-se de que o Ollama está em execução em segundo plano na barra de tarefas. No terminal, execute o seguinte comando para baixar e carregar o modelo de linguagem utilizado pelo sistema:
+Com o Ollama em execução em segundo plano, baixe o modelo usado pelo sistema:
 ```bash
 ollama run llama3.1
 ```
-*(Aguarde a conclusão do download do modelo, que possui aproximadamente 4.7 GB. Você pode fechar o prompt interativo do Ollama digitando `/bye` após o término).*
+(≈4.7 GB de download. Digite `/bye` para sair do prompt interativo após o término.)
 
 ### 3. Configurar o Ambiente Virtual do Python
-Garante o isolamento das dependências para evitar conflitos no sistema operacional.
-
 **No Windows:**
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
 ```
-
 **No Linux/macOS:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 4. Instalar as Dependências do Projeto
-Com o ambiente virtual ativado (indicado pelo prefixo `(.venv)` no terminal), instale todas as bibliotecas requeridas:
+### 4. Instalar as Dependências do Backend
+Com o ambiente virtual ativado (`(.venv)` no prompt):
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+### 5. Instalar as Dependências do Frontend
+```bash
+cd frontend
+npm install
+cd ..
 ```
 
 ---
 
 ## 🧪 Validar a Instalação (Opcional)
 
-Para garantir que toda a infraestrutura e os testes de integração e domínio estão funcionando corretamente na nova máquina, execute a suíte de testes:
+Suíte de testes do backend:
 ```bash
 pytest
 ```
-*Todos os 20 testes automatizados devem passar com sucesso.*
+
+Verificação de tipos do frontend:
+```bash
+cd frontend
+npm run check
+cd ..
+```
 
 ---
 
 ## 🚀 Como Executar o Sistema
 
-### Iniciar o Painel Desktop de Monitoramento
-Você pode abrir o painel principal de duas maneiras no Windows:
-
-* **Método Rápido:** Dê um duplo clique no atalho [Iniciar-Painel.bat](file:///d:/DEV26/ReadRelint/Iniciar-Painel.bat) na raiz do projeto.
-* **Via Terminal (com ambiente virtual ativado):**
+### Iniciar o Painel Desktop
+* **Método rápido:** dê duplo clique em `Iniciar-Painel.bat` na raiz do projeto.
+* **Via terminal** (com o ambiente virtual ativado):
   ```bash
-  python src/presentation/desktop/app.py
+  python painel.py
   ```
+
+O painel desktop (PyQt6) atua como um hub central: a partir dele você liga/desliga o monitoramento de pastas, o servidor backend (FastAPI, porta `:8000`) e o dashboard web (SvelteKit, porta `:5173`), que abre automaticamente no navegador ao ser iniciado.
 
 ---
 
 ## 📂 Organização das Pastas pós-instalação
-* Ao iniciar o monitoramento, selecione uma pasta local contendo os PDFs de Boletins de Ocorrência.
-* O banco de dados local estruturado será gerado automaticamente no caminho `data/database.json`.
+* Ao iniciar o monitoramento, selecione uma pasta local contendo os PDFs de RELINTs.
+* O banco de dados relacional (SQLite, modo WAL) é gerado automaticamente em `data/relints.db`.
+* Fotos e anexos extraídos dos PDFs ficam em `data/media/`.

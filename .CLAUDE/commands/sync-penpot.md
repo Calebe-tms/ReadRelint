@@ -49,4 +49,4 @@ O agente deve cruzar o JSON extraído com os arquivos do SvelteKit sem assumir N
 
 ### 5. Validação Técnica
 - Executar `npm run check` (`svelte-check`) garantindo 0 erros e 0 avisos.
-- Atualizar os arquivos de contexto (`.ai_context/02_project_state.md`).
+- Atualizar os arquivos de contexto (`docs/project-state.md`).
