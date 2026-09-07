@@ -46,7 +46,7 @@ Lista consolidada de todos os participantes (pessoas), cada um com contagem de R
 Retorna uma lista de `PersonDossierDTO`, ordenada por quantidade de RELINTs vinculados (decrescente). O DTO expõe tanto campos em inglês (`name`, `nickname`, `document`, `background`, `photo_path`, `photos`, `linked_relints_count`, `linked_relints`) quanto aliases computados em português (`nome`, `alcunha`, `documento`, `antecedentes`, `caminho_foto`, `galeria_fotos`, `quantidade_relints`) para compatibilidade com o frontend.
 
 ### `GET /api/v1/participants/{person_id}`
-Retorna o dossiê detalhado de um único participante (mesmo formato de `PersonDossierDTO`), incluindo a lista completa de RELINTs vinculados com o papel desempenhado em cada um. Busca por `chave_pessoa` ou `id`. Retorna 404 se não encontrado.
+Retorna o dossiê detalhado de um único participante (mesmo formato de `PersonDossierDTO`), incluindo a lista completa de RELINTs vinculados com o papel desempenhado em cada um. Busca por `documento` (chave única de `pessoas` desde a eliminação de `chave_pessoa`, ver ADR-0101) ou `id`. Retorna 404 se não encontrado.
 
 ### `PUT /api/v1/participants/{person_id}`
 Atualiza os dados de identificação e antecedentes de uma pessoa (`name`, `nickname`, `document`, `background` — todos opcionais, só os enviados são alterados). Retorna o dossiê atualizado.

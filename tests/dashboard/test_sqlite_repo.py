@@ -95,8 +95,12 @@ def test_sqlite_person_repo_crud(tmp_path: Path):
     db_file = tmp_path / "test_persons.db"
     person_repo = SqlitePersonRepo(db_file)
 
+    # person_id vazio: o repositório deriva a chave a partir do documento (mesmo padrão
+    # usado de verdade em EtlService.process_file(): person_id = p_doc if p_doc else p_name.lower()).
+    # Desde a eliminação de chave_pessoa (ADR-0101), documento é a própria chave única —
+    # não faz mais sentido um person_id explícito divergir do documento.
     person = Person(
-        person_id="123456789",
+        person_id="",
         name="Carlos da Silva",
         aliases=["Carlinhos"],
         documents=["123.456.789-00"],
@@ -105,10 +109,10 @@ def test_sqlite_person_repo_crud(tmp_path: Path):
 
     # Save
     pid = person_repo.save(person)
-    assert pid == "123456789"
+    assert pid == "12345678900"
 
     # Get by ID
-    fetched = person_repo.get_by_id("123456789")
+    fetched = person_repo.get_by_id("12345678900")
     assert fetched is not None
     assert fetched.name == "Carlos da Silva"
     assert "Carlinhos" in fetched.aliases
@@ -116,12 +120,13 @@ def test_sqlite_person_repo_crud(tmp_path: Path):
     # Get by Document
     by_doc = person_repo.get_by_document("12345678900")
     assert by_doc is not None
-    assert by_doc.person_id == "123456789"
+    assert by_doc.person_id == "12345678900"
 
     # Update
+    person.person_id = "12345678900"
     person.aliases.append("Novo Apelido")
     person_repo.update(person)
-    updated = person_repo.get_by_id("123456789")
+    updated = person_repo.get_by_id("12345678900")
     assert updated is not None
     assert "Novo Apelido" in updated.aliases
 

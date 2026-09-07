@@ -99,3 +99,6 @@ Os números **ADR-010 a ADR-016 não existem** neste índice de propósito: são
 | 0098 | Coordenadas Sempre Normalizadas em 6 Casas Decimais (Padrão Google Maps) | Aceita | [0098-coordenadas-normalizadas-6-casas-decimais-google-maps.md](./0098-coordenadas-normalizadas-6-casas-decimais-google-maps.md) |
 | 0099 | Isolamento Estrito entre os Motores LLM e Determinístico — Sem Fallback Cruzado (por Enquanto) | Aceita | [0099-isolamento-estrito-motores-sem-fallback-cruzado.md](./0099-isolamento-estrito-motores-sem-fallback-cruzado.md) |
 | 0100 | `RegistryExtractor` — Pass Dedicado para Registro Policial em Outro Órgão | Aceita | [0100-registry-extractor-registro-policial-outro-orgao.md](./0100-registry-extractor-registro-policial-outro-orgao.md) |
+| 0101 | Gerenciador de Pessoas — Schema de Importação do App-AJ | Aceita | [0101-gerenciador-pessoas-schema-importacao-app-aj.md](./0101-gerenciador-pessoas-schema-importacao-app-aj.md) |
+| 0102 | SQLModel + Alembic para o Módulo Gerenciador de Pessoas | Aceita | [0102-sqlmodel-alembic-modulo-gerenciador-pessoas.md](./0102-sqlmodel-alembic-modulo-gerenciador-pessoas.md) |
+| 0103 | Correção Pendente — `get_participant_dossier()` Sem `return` no Caminho de Sucesso | Proposta | [0103-correcao-pendente-return-ausente-dossie-participante.md](./0103-correcao-pendente-return-ausente-dossie-participante.md) |

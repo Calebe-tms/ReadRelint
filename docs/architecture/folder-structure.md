@@ -6,17 +6,23 @@ Este documento apresenta a estrutura de diretórios e arquivos do projeto **Read
 
 ```text
 ReadRelint/
-├── .agents/                    # Customizações, regras e fluxos de agentes de IA
+├── .claude/                    # Customizações, regras e skills de agentes de IA
 ├── docs/                       # Documentação completa do projeto (padrão Diátaxis)
+├── alembic/                    # Migrações versionadas (Alembic) do módulo Gerenciador de Pessoas
+│   └── versions/               # Scripts de migration, um por revisão
+├── alembic.ini                 # Configuração do Alembic (aponta pra data/relints.db)
+├── scripts/                    # Scripts utilitários de execução única (ex: import_app_aj_data.py)
 ├── backend/                    # Backend API REST em FastAPI e lógica central (Engine)
 │   ├── api/                    # Routers REST, endpoints, dependências e WebSocket
 │   ├── core/                   # Configurações globais e utilitários centrais
-│   ├── database/               # Repositórios SQLite, modelos Pydantic e migrações
+│   ├── database/               # Repositórios SQLite (motor RELINT) + models/repo SQLModel (módulo Pessoas)
 │   ├── engine/                 # Processamento de PDF, higienização e motores (Ollama/Regex)
 │   └── task_manager/           # Fila de processamento (ETL) e watcher de diretórios
-├── data/                       # Dados persistidos, SQLite e mídia extraída
+├── data/                       # Dados persistidos, SQLite e mídia extraída (gitignored)
 │   ├── relints.db              # Banco de dados SQLite principal
-│   └── media/                  # Fotos de participantes e anexos recortados dos PDFs
+│   ├── media/                  # Fotos de participantes e anexos recortados dos PDFs
+│   ├── pessoas_Images/         # Fotos de pessoas do módulo Gerenciador de Pessoas
+│   └── app_aj_import/          # CSVs da planilha App-AJ preservados para a migração de dados (PII, nunca vai pro git)
 ├── desktop/                    # Interface gráfica nativa de controle (PyQt6)
 │   ├── controllers/            # Controladores de serviço e MainController
 │   └── ui/                     # Interface PyQt6 (painel, console de logs, gauges)
@@ -24,7 +30,11 @@ ReadRelint/
 │   ├── src/                    # Componentes Svelte, rotas e estilos nativos SvelteKit (app.css / variables.css)
 │   ├── static/                 # Ativos estáticos (ex: robots.txt)
 │   └── vite.config.js          # Configurações do empacotador Vite
-├── tests/                      # Suíte de testes automatizados (pytest)
+├── tests/                      # Suíte de testes automatizados (pytest), organizada por área:
+│   ├── motor_llm/               #   extração via LLM (Ollama)
+│   ├── motor_regex/              #   extração determinística (regex/heurísticas)
+│   ├── modulo_pessoas/           #   Gerenciador de Pessoas (dossiê, App-AJ)
+│   └── dashboard/                #   API REST, persistência e monitoramento
 ├── painel.py                   # Script de atalho para inicialização do painel PyQt6
 ├── Iniciar-Painel.bat          # Script de lote do Windows para iniciar o app facilmente
 └── requirements.txt            # Dependências Python do projeto
@@ -41,7 +51,7 @@ Documentação completa do projeto no padrão Diátaxis, sucessora da pasta `.ai
 Toda a lógica de negócios e API:
 - `api/`: define os endpoints do FastAPI (ex.: `/api/v1/relints`, `/api/v1/events` para WebSocket, `/api/v1/monitoring`).
 - `core/`: utilitários compartilhados e configurações da aplicação.
-- `database/`: conexão com o SQLite, definições de schemas do repositório (`sqlite_repo.py`, `sqlite_person_repo.py`) e controle de migrações automáticas.
+- `database/`: conexão com o SQLite. Motor de RELINT (`sqlite_repo.py`, `sqlite_person_repo.py`) usa SQL puro com auto-migração via `_init_db()`; módulo Gerenciador de Pessoas (`pessoas_models.py`, `pessoas_repo.py`) usa SQLModel + Alembic (`alembic/`) — duas tecnologias coexistindo no mesmo arquivo `.db`, ver ADR-0102.
 - `engine/`:
   - `parsers/`: extração de texto cru de PDFs via `PyMuPDF`.
   - `cleaners/`: higienização de texto e nomes (`text_cleaner.py`, `bm_classifier.py`, `name_parser.py`).

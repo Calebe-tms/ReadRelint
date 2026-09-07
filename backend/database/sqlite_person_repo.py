@@ -63,10 +63,9 @@ class SqlitePersonRepo(IPersonRepo):
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS pessoas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    chave_pessoa TEXT UNIQUE NOT NULL,
                     nome TEXT NOT NULL,
                     alcunha TEXT,
-                    documento TEXT,
+                    documento TEXT UNIQUE NOT NULL,
                     antecedentes TEXT
                 );
             """)
@@ -93,18 +92,16 @@ class SqlitePersonRepo(IPersonRepo):
         clean_doc = p_doc.replace(".", "").replace("-", "") if p_doc else ""
         p_key = person.person_id or (clean_doc if clean_doc else p_name.lower())
         p_nick = ", ".join(set(person.aliases)) if person.aliases else ""
-        p_back = ""
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO pessoas (chave_pessoa, nome, alcunha, documento, antecedentes)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(chave_pessoa) DO UPDATE SET
+                INSERT INTO pessoas (documento, nome, alcunha)
+                VALUES (?, ?, ?)
+                ON CONFLICT(documento) DO UPDATE SET
                     nome=excluded.nome,
-                    alcunha=CASE WHEN excluded.alcunha != '' THEN excluded.alcunha ELSE pessoas.alcunha END,
-                    documento=CASE WHEN excluded.documento != '' THEN excluded.documento ELSE pessoas.documento END;
-            """, (p_key, p_name, p_nick, p_doc, p_back))
+                    alcunha=CASE WHEN excluded.alcunha != '' THEN excluded.alcunha ELSE pessoas.alcunha END;
+            """, (p_key, p_name, p_nick))
             conn.commit()
             return p_key
 
@@ -116,10 +113,15 @@ class SqlitePersonRepo(IPersonRepo):
 
     def _build_person_from_row(self, conn: sqlite3.Connection, row: sqlite3.Row) -> Person:
         person_db_id = row["id"]
-        person_key = row["chave_pessoa"] if "chave_pessoa" in row.keys() else row["person_key"]
+        person_key = row["documento"] if "documento" in row.keys() else row["document"]
         name = row["nome"] if "nome" in row.keys() else row["name"]
         nickname = (row["alcunha"] if "alcunha" in row.keys() else row["nickname"]) or ""
-        document = (row["documento"] if "documento" in row.keys() else row["document"]) or ""
+        document = person_key or ""
+        # documento agora também guarda a chave sintética (nome em minúsculo) quando a pessoa
+        # não tem RG/CPF real (ADR-0101 — chave_pessoa foi eliminada, valor absorvido aqui) —
+        # nesse caso não é um documento de verdade, não deve aparecer como tal.
+        if document and document.lower() == name.strip().lower():
+            document = ""
 
         cursor = conn.cursor()
         cursor.execute("""
@@ -147,11 +149,11 @@ class SqlitePersonRepo(IPersonRepo):
 
     def get_by_id(self, person_id: str) -> Optional[Person]:
         """
-        Busca uma pessoa no SQLite pela sua chave_pessoa.
+        Busca uma pessoa no SQLite pelo seu documento (chave única).
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM pessoas WHERE chave_pessoa = ? LIMIT 1;", (person_id,))
+            cursor.execute("SELECT * FROM pessoas WHERE documento = ? LIMIT 1;", (person_id,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -159,7 +161,9 @@ class SqlitePersonRepo(IPersonRepo):
 
     def get_by_document(self, document: str) -> Optional[Person]:
         """
-        Busca uma pessoa pelo número de documento (RG/CPF).
+        Busca uma pessoa pelo número de documento (RG/CPF). `documento` pode estar salvo com
+        ou sem pontuação (depende de como a pessoa foi originalmente inserida — ver save()),
+        então a comparação limpa pontuação dos dois lados antes de comparar.
         """
         if not document:
             return None

@@ -209,18 +209,15 @@ class SqliteRepo(IDatabaseRepo):
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS pessoas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    chave_pessoa TEXT UNIQUE NOT NULL,
                     nome TEXT NOT NULL,
                     alcunha TEXT,
-                    documento TEXT,
+                    documento TEXT UNIQUE NOT NULL,
                     antecedentes TEXT
                 );
             """)
 
             cursor.execute("PRAGMA table_info(pessoas);")
             p_cols = [row["name"] for row in cursor.fetchall()]
-            if "person_key" in p_cols and "chave_pessoa" not in p_cols:
-                cursor.execute("ALTER TABLE pessoas RENAME COLUMN person_key TO chave_pessoa;")
             if "name" in p_cols and "nome" not in p_cols:
                 cursor.execute("ALTER TABLE pessoas RENAME COLUMN name TO nome;")
             if "nickname" in p_cols and "alcunha" not in p_cols:
@@ -491,16 +488,15 @@ class SqliteRepo(IDatabaseRepo):
                 p_key = clean_doc if clean_doc else p_name.lower()
 
                 cursor.execute("""
-                    INSERT INTO pessoas (chave_pessoa, nome, alcunha, documento, antecedentes)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(chave_pessoa) DO UPDATE SET
+                    INSERT INTO pessoas (documento, nome, alcunha, antecedentes)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(documento) DO UPDATE SET
                         nome=excluded.nome,
                         alcunha=CASE WHEN excluded.alcunha != '' THEN excluded.alcunha ELSE pessoas.alcunha END,
-                        documento=CASE WHEN excluded.documento != '' THEN excluded.documento ELSE pessoas.documento END,
                         antecedentes=CASE WHEN excluded.antecedentes != '' THEN excluded.antecedentes ELSE pessoas.antecedentes END;
-                """, (p_key, p_name, p_nick, p_doc, p_back))
+                """, (p_key, p_name, p_nick, p_back))
 
-                cursor.execute("SELECT id FROM pessoas WHERE chave_pessoa = ?;", (p_key,))
+                cursor.execute("SELECT id FROM pessoas WHERE documento = ?;", (p_key,))
                 p_row = cursor.fetchone()
                 if p_row:
                     person_id = p_row["id"]

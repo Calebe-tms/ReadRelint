@@ -95,15 +95,26 @@ Table furto_veiculo_detalhes {
 
 Table pessoas {
   id INTEGER [pk, increment]
-  chave_pessoa TEXT [unique, not null]
   nome TEXT [not null]
   alcunha TEXT
-  documento TEXT
-  foto_path TEXT
+  // Chave única (chave_pessoa foi eliminada, ver ADR-0101 — redundante com documento).
+  // Sem RG/CPF real, guarda o nome em minúsculo como chave sintética (fallback).
+  documento TEXT [unique, not null]
   antecedentes TEXT
 
   // DADOS ESPARSOS (Advindos do App-AJ e RELINTs complexos)
-  dados_aj JSON // Armazena: Situacao, Presidio, Cela, Crimes, Companheiro, Tatuagens, Redes Sociais
+  // JSON livre, chave:valor sem schema fixo (ex: {"Situação": "Preso", "Presídio": "..."}).
+  // Editável via formulário de pares chave/valor — usuário pode adicionar chaves novas
+  // sem migração de banco. Ver ADR-0101.
+  dados_aj JSON
+}
+
+// 1:N — substitui as colunas fixas Foto/Foto_2/Foto_3 da planilha App-AJ (ADR-0101)
+Table pessoa_fotos {
+  id INTEGER [pk, increment]
+  pessoa_id INTEGER [ref: > pessoas.id, not null]
+  caminho_arquivo TEXT [not null]
+  ordem INTEGER
 }
 
 Table relint_participantes {
@@ -118,17 +129,31 @@ Table relint_participantes {
 // INTELIGÊNCIA: ENTIDADES COMPARTILHADAS E VÍNCULOS (App-AJ)
 // =========================================================================
 
+// Locais nomeados (aba "QRB" da planilha App-AJ)
+Table qrb {
+  id INTEGER [pk, increment]
+  chave_externa TEXT [unique, not null] // ID hash da planilha — importação idempotente
+  nome_local TEXT [not null]
+  municipio TEXT
+  endereco TEXT
+  coordenadas TEXT
+  tipo_local TEXT // ex: "Moradia", "Propriedade Rural ligada ao Tráfico" — confirmado com dados reais
+  foto TEXT
+}
+
 Table grupos_criminosos {
   id INTEGER [pk, increment]
+  chave_externa TEXT [unique, not null] // ID hash da planilha
   nome TEXT [not null]
-  qrb TEXT
+  qrb_id INTEGER [ref: > qrb.id]
   observacao TEXT
 }
 
 Table grupos_familiares {
   id INTEGER [pk, increment]
+  chave_externa TEXT [unique, not null] // ID hash da planilha
   nome TEXT [not null]
-  qrb TEXT
+  qrb_id INTEGER [ref: > qrb.id]
   observacao TEXT
 }
 
@@ -144,6 +169,11 @@ Table veiculos {
 }
 
 // Tabelas Pivot N:N
+// pessoa_grupo_criminoso: formato confirmado com dados reais da planilha — ID, Criminoso (RG),
+// Grupo Criminoso (hash), Função (texto livre: "Chefe", "Motorista", "Distribuidor" etc, sem
+// enum fechado). pessoa_grupo_familiar padronizada com a mesma coluna `funcao` por consistência
+// de schema, mesmo a aba de origem (R_GRUPO_FAMILIAR) não tendo esse dado — fica NULL na
+// migração inicial, preenchível depois via CRUD do dashboard.
 Table pessoa_grupo_criminoso {
   id INTEGER [pk, increment]
   pessoa_id INTEGER [ref: > pessoas.id]
@@ -155,11 +185,20 @@ Table pessoa_grupo_familiar {
   id INTEGER [pk, increment]
   pessoa_id INTEGER [ref: > pessoas.id]
   grupo_familiar_id INTEGER [ref: > grupos_familiares.id]
+  funcao TEXT
 }
 
+Table pessoa_qrb {
+  id INTEGER [pk, increment]
+  pessoa_id INTEGER [ref: > pessoas.id]
+  qrb_id INTEGER [ref: > qrb.id]
+}
+
+// VEICULOS_POSSE real: ID, Veículo (placa), Posse (RG da pessoa — é a própria chave de vínculo,
+// não um campo descritivo), Data. Sem coluna de "tipo de posse".
 Table pessoa_veiculo {
   id INTEGER [pk, increment]
   pessoa_id INTEGER [ref: > pessoas.id]
   veiculo_id INTEGER [ref: > veiculos.id]
-  tipo_posse TEXT
+  data_posse TEXT
 }

@@ -81,9 +81,8 @@ def list_participants(
         cursor = conn.cursor()
         
         query = """
-            SELECT 
+            SELECT
                 p.id,
-                p.chave_pessoa,
                 p.nome,
                 p.alcunha,
                 p.documento,
@@ -101,10 +100,14 @@ def list_participants(
 
         for p in p_rows:
             p_id = p["id"]
-            p_key = p["chave_pessoa"]
+            p_key = p["documento"]
             name = p["nome"] or ""
             nick = p["alcunha"] or ""
+            # documento pode guardar a chave sintética (nome em minúsculo) quando não há RG/CPF
+            # real (ADR-0101) — nesse caso não deve aparecer como documento pro usuário.
             doc = p["documento"] or ""
+            if doc and doc.lower() == name.strip().lower():
+                doc = ""
             bg = p["antecedentes"] or ""
             relint_cnt = p["relint_count"] or 0
 
@@ -182,20 +185,24 @@ def get_participant_dossier(
     """
     with person_repo._get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM pessoas WHERE chave_pessoa = ? OR id = ? LIMIT 1;", (person_id, person_id))
+        cursor.execute("SELECT * FROM pessoas WHERE documento = ? OR id = ? LIMIT 1;", (person_id, person_id))
         p = cursor.fetchone()
         if not p:
             raise HTTPException(status_code=404, detail="Participante não encontrado.")
 
         p_id = p["id"]
-        p_key = p["chave_pessoa"]
+        p_key = p["documento"]
         name = p["nome"] or ""
         nick = p["alcunha"] or ""
+        # documento pode guardar a chave sintética (nome em minúsculo) quando não há RG/CPF
+        # real (ADR-0101) — nesse caso não deve aparecer como documento pro usuário.
         doc = p["documento"] or ""
+        if doc and doc.lower() == name.strip().lower():
+            doc = ""
         bg = p["antecedentes"] or ""
 
         cursor.execute("""
-            SELECT 
+            SELECT
                 r.id AS relint_id,
                 r.arquivo_origem,
                 r.assunto,
@@ -248,7 +255,7 @@ def update_participant(
     """
     with person_repo._get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM pessoas WHERE chave_pessoa = ? OR id = ? LIMIT 1;", (person_id, person_id))
+        cursor.execute("SELECT * FROM pessoas WHERE documento = ? OR id = ? LIMIT 1;", (person_id, person_id))
         p = cursor.fetchone()
         if not p:
             raise HTTPException(status_code=404, detail="Participante não encontrado.")
