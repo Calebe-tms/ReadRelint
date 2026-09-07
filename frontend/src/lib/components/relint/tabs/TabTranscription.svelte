@@ -17,7 +17,7 @@
 
   /** @param {string} str */
   function escapeHtml(str) {
-    return str.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    return str.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c));
   }
 
   /** @param {string} str */
@@ -43,7 +43,10 @@
     return 'entity-neutral';
   }
 
-  /** Extrai só o nome do logradouro do endereço formatado (ex: "Rua X, nº 175 - Bairro, Município - RS" -> "Rua X"). */
+  /**
+   * Extrai só o nome do logradouro do endereço formatado (ex: "Rua X, nº 175 - Bairro, Município - RS" -> "Rua X").
+   * @param {string} address
+   */
   function extractStreetFragment(address) {
     if (!address || address === '-' || !address.includes(',')) return '';
     const streetPart = address.split(',')[0].trim();
@@ -86,12 +89,12 @@
     }
 
     const names = (relint.participants || [])
-      .flatMap((p) => {
+      .flatMap((/** @type {any} */ p) => {
         const role = p.participation_type || p.role;
         return [[p.name, role], [p.nickname || p.alias, role]];
       })
-      .filter(([name]) => name && String(name).trim().length > 2)
-      .sort((a, b) => String(b[0]).length - String(a[0]).length);
+      .filter((/** @type {[any, any]} */ [name]) => name && String(name).trim().length > 2)
+      .sort((/** @type {any} */ a, /** @type {any} */ b) => String(b[0]).length - String(a[0]).length);
 
     for (const [name, role] of names) {
       const nameRegex = buildBoundaryRegex(String(name).trim());

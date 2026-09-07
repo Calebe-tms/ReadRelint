@@ -21,11 +21,15 @@ class MockWebSocket {
   static CLOSING = 2;
   static CLOSED = 3;
 
+  /** @type {(() => void) | null} */
+  onopen = null;
+
+  /** @param {string} url */
   constructor(url) {
     this.url = url;
     this.readyState = 0; // CONNECTING
     this.send = vi.fn();
-    
+
     // Simular a abertura assíncrona
     setTimeout(() => {
       this.readyState = 1; // OPEN
@@ -61,40 +65,48 @@ describe('eventsService - WebSockets', () => {
     
     expect(realtimeService.ws).not.toBeNull();
     expect(realtimeService.isConnected).toBe(true);
-    expect(realtimeService.ws.url).toBe('ws://localhost:5173/api/v1/events');
+
+    const ws = realtimeService.ws;
+    if (!ws) throw new Error('WebSocket não conectado');
+    expect(ws.url).toBe('ws://localhost:5173/api/v1/events');
 
     // Simula o servidor enviando mensagem de connected
-    realtimeService.ws.onmessage({ 
-        data: JSON.stringify({ event: 'connected', data: { status: 'online' } }) 
+    (/** @type {(ev: any) => void} */ (ws.onmessage))({
+        data: JSON.stringify({ event: 'connected', data: { status: 'online' } })
     });
-    
+
     expect(connectSpy).toHaveBeenCalledWith({ status: 'online' });
   });
 
   it('deve emitir eventos arbitrários recebidos', async () => {
     const relintSpy = vi.fn();
     realtimeService.subscribe('relint_created', relintSpy);
-    
+
     vi.advanceTimersByTime(20);
-    
-    realtimeService.ws.onmessage({ 
-        data: JSON.stringify({ event: 'relint_created', data: { id: 1 } }) 
+
+    const ws = realtimeService.ws;
+    if (!ws) throw new Error('WebSocket não conectado');
+    (/** @type {(ev: any) => void} */ (ws.onmessage))({
+        data: JSON.stringify({ event: 'relint_created', data: { id: 1 } })
     });
-    
+
     expect(relintSpy).toHaveBeenCalledWith({ id: 1 });
   });
 
   it('deve tentar reconectar após falha de conexão (onclose)', async () => {
     realtimeService.connect();
     vi.advanceTimersByTime(20);
-    
+
     expect(realtimeService.isConnected).toBe(true);
-    
+
+    const ws = realtimeService.ws;
+    if (!ws) throw new Error('WebSocket não conectado');
+
     // Força fechamento
-    realtimeService.ws.onclose();
+    (/** @type {() => void} */ (ws.onclose))();
     expect(realtimeService.isConnected).toBe(false);
     expect(realtimeService.ws).toBeNull();
-    
+
     // Aguarda o timer de 3000ms
     vi.advanceTimersByTime(3000);
     expect(realtimeService.ws).not.toBeNull();
@@ -103,12 +115,14 @@ describe('eventsService - WebSockets', () => {
   it('deve enviar mensagens para o servidor (bidirecional)', async () => {
     realtimeService.connect();
     vi.advanceTimersByTime(20);
-    
+
     expect(realtimeService.isConnected).toBe(true);
-    
+
     realtimeService.send('client_ping', { foo: 'bar' });
-    
-    expect(realtimeService.ws.send).toHaveBeenCalledWith(JSON.stringify({
+
+    const ws = realtimeService.ws;
+    if (!ws) throw new Error('WebSocket não conectado');
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({
         event: 'client_ping',
         data: { foo: 'bar' }
     }));

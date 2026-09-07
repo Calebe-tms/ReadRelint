@@ -11,7 +11,10 @@
    * Config declarativa por especialidade: cada campo aponta exatamente para as chaves
    * já expostas pela API em `relint[detailsKey]` (ver backend/api/routers/relints.py).
    * 'Outros' e 'Furto Qualificado' não têm tabela de detalhe própria — ficam de fora.
+   * @typedef {{ key: string, label: string, type: 'text'|'select'|'switch', options?: string[] }} SpecialtyField
+   * @typedef {{ detailsKey: string, badgeVariant: 'amber'|'success'|'warning'|'error'|'info'|'neutral', fields: SpecialtyField[] }} SpecialtyConfigEntry
    */
+  /** @type {Record<string, SpecialtyConfigEntry>} */
   const SPECIALTY_CONFIG = {
     'Homicídio': {
       detailsKey: 'homicide_details',

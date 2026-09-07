@@ -17,7 +17,10 @@
   /** @type {{ relint: any, disabled?: boolean, onUpdate?: (relint: any) => void }} */
   let { relint, disabled = false, onUpdate } = $props();
 
+  /** @typedef {{ level: string, label: string, variant: 'amber'|'success'|'warning'|'error'|'info'|'neutral', icon: any }} GeoPrecisionInfo */
+
   // Cálculo reativo do nível de confiabilidade
+  /** @type {GeoPrecisionInfo} */
   let geoPrecision = $derived.by(() => {
     const p = (relint.geo_precision || relint.precisao_geo || relint.precision_level || '').toLowerCase();
     
@@ -101,7 +104,7 @@
   let mapEmbedUrl = $derived.by(() => {
     // 1. Prioridade para coordenadas GPS válidas (com pin no ponto exato)
     if (relint.coordinates && relint.coordinates.trim().length > 5 && !relint.coordinates.includes('Aproximado')) {
-      const parts = relint.coordinates.split(',').map(s => s.trim());
+      const parts = relint.coordinates.split(',').map((/** @type {string} */ s) => s.trim());
       if (parts.length === 2) {
         const lat = parseFloat(parts[0]);
         const lon = parseFloat(parts[1]);
