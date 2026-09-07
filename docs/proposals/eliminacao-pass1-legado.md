@@ -26,7 +26,7 @@ O objetivo desta próxima etapa é **eliminar esse Pass 1 legado por completo**,
 |---|---|---|
 | `date_of_fact`, `time_of_fact` | **100% determinístico — sai da LLM.** Reaproveita `extract_date_of_fact`/`extract_time_of_fact` (já existentes em `backend/engine/cleaners/text_cleaner.py`, hoje usados só no caminho sem-IA). | Formato do cabeçalho é extremamente formulaico ("Em DD de mês de AAAA, às HHhMMmin"). LLM aqui só adiciona risco sem ganho — mesmo raciocínio já aplicado a `police_unit` e `bm_group` nesta sessão. |
 | `relint_type` | **Novo classificador determinístico** — `classify_relint_type()`, mesmo padrão de 2 camadas do `classify_bm_group()` (filename+assunto primeiro, conteúdo como fallback). | Enum fechado de 4 opções (`Ocorrência`, `Disk Denúncia`, `Resposta a PB`, `Outros`) com vocabulário-gatilho previsível no assunto ("DISQUE DENÚNCIA", "RESPOSTA PB..."). |
-| `registry_number`, `registry_agency`, `registry_year` | **Novo pass LLM dedicado** ("Dados de Registro"), schema minúsculo, com guardrail de evidência literal no texto (`text_contains`, reaproveitado de `location_extractor.py`) para `registry_number`. | Não é formulaico o bastante para regex único (varia por órgão/época), mas é um dado tipo "serial" — fácil de validar contra o texto bruto. |
+| `registry_number`, `registry_agency`, `registry_year` | ✅ **Implementado** — novo pass LLM dedicado (`RegistryExtractor`, `backend/engine/extractors/llm/extractors/registry_extractor.py`), com guardrail de evidência literal (`text_contains`, reaproveitado de `location_extractor.py`), busca restrita ao corpo narrativo pós-`ANEXOS:` (nunca o cabeçalho, onde vive o número do próprio RELINT) e reclassificação determinística por contagem de dígitos (órgão ~6 dígitos, ano 4 dígitos, número do registro raramente >4 — heurística fornecida pelo usuário, já que a ORDEM dos 3 números no texto não é confiável). Ver ADR-0100. | Não é formulaico o bastante para regex único (varia por órgão/época, ordem inconsistente), mas é um dado tipo "serial" — fácil de validar contra o texto bruto uma vez isolado o trio de números certo. |
 | `location_types` | **Novo pass LLM dedicado** ("Tipos de Local"), schema de 1 campo (lista). | Categorização livre (ex: "Propriedade Rural", "Escolas") sem enum fechado — exige julgamento de contexto genuíno. |
 | `main_fact` | **Derivado sem chamada nova**, a partir de `subject` (já resolvido pelo Pass de Síntese) e/ou `bm_group` (já resolvido deterministicamente). | Conceitualmente já é uma combinação do que os outros passes resolvem; uma chamada LLM extra aqui não resolveria ambiguidade real. |
 | `participants` | **Removido do Pass 1 legado agora.** Fica sem extração até o desenho dos passes novos de participantes (próxima etapa, fora do escopo desta proposta). | Vai virar seu próprio conjunto de passes dedicados — não faz sentido adivinhar o formato agora. |
@@ -38,7 +38,7 @@ O objetivo desta próxima etapa é **eliminar esse Pass 1 legado por completo**,
 O Pass 1 legado deixa de existir. Em seu lugar:
 
 - **3 mecanismos determinísticos** (sem LLM): `date_of_fact`/`time_of_fact`, `classify_relint_type()` (novo), `classify_bm_group()` (já existente).
-- **2 passes LLM novos e minúsculos**: "Dados de Registro" e "Tipos de Local".
+- **2 passes LLM novos e minúsculos**: "Dados de Registro" (✅ implementado, `RegistryExtractor`) e "Tipos de Local".
 - **1 derivação sem chamada**: `main_fact`.
 - **`participants` fica de fora**, pendente de desenho próprio.
 
@@ -59,7 +59,7 @@ Isso aumenta o número de passes LLM (não reduz — decisão deliberada), mas c
 
 - [ ] Implementar `classify_relint_type()` (determinístico).
 - [ ] Remover `date_of_fact`/`time_of_fact` do schema da LLM e resolver 100% via `text_cleaner.py` no caminho IA também (hoje só usado no caminho sem-IA).
-- [ ] Criar o pass "Dados de Registro" (schema + extractor + prompt).
+- [x] Criar o pass "Dados de Registro" (schema + extractor + prompt) — `RegistryExtractor`, ver ADR-0100.
 - [ ] Criar o pass "Tipos de Local" (schema + extractor + prompt).
 - [ ] Resolver `main_fact` por derivação.
 - [ ] Remover `participants` do Pass 1 legado (sem substituto ainda).

@@ -59,7 +59,13 @@ def clean_relint_text(text: str) -> str:
     # 2. Remove marcadores de imagem do Docling (<!-- image -->) e placeholders "IMAGEM CRIMINOSOS" isolados
     cleaned_text = re.sub(r'<!--\s*image\s*-->', '', cleaned_text, flags=re.IGNORECASE)
     cleaned_text = re.sub(r'(?m)^[ \t]*[#]{1,6}[ \t]*$', '', cleaned_text)
-    cleaned_text = re.sub(r'(?m)^[ \t]*(?:IMAGEM|FOTO|REGISTRO|CÂMERA)\b[^\n]*$', '', cleaned_text, flags=re.IGNORECASE)
+    # Exige "DO"/"DE" logo após a palavra-chave (padrão de legenda, ex: "FOTO DO LOCAL") ou
+    # dois-pontos próximo (ex: "REGISTRO FOTOGRÁFICO:") — evita apagar frases narrativas legítimas
+    # que começam com essas palavras (ex: "Registro na DP Nº 26/2026/151641...").
+    cleaned_text = re.sub(
+        r'(?m)^[ \t]*(?:IMAGEM|FOTO|REGISTRO|CÂMERA)\b(?:\s+D[OE]\b[^\n]*|[^\n:]{0,40}:[^\n]*)$',
+        '', cleaned_text, flags=re.IGNORECASE
+    )
 
     # 3. Remove sequências de preenchimento (___, \_\_\_\_, ---, ===, ***) isoladas ou ao final de frases
     cleaned_text = re.sub(r'(?:\\?[_\-=\*]){3,}', '', cleaned_text)

@@ -16,6 +16,7 @@ from backend.engine.cleaners.bm_classifier import classify_bm_group
 from backend.engine.extractors.llm.extractors.summary_extractor import SummaryExtractor
 from backend.engine.extractors.llm.extractors.location_extractor import LocationExtractor
 from backend.engine.extractors.llm.extractors.specialty_extractor import ALL_SPECIALTY_FIELDS, SpecialtyExtractor
+from backend.engine.extractors.llm.extractors.registry_extractor import RegistryExtractor
 
 
 class LlmPipeline(IExtractor):
@@ -28,6 +29,7 @@ class LlmPipeline(IExtractor):
         self.summary_extractor = SummaryExtractor(self.processor)
         self.location_extractor = LocationExtractor(self.processor)
         self.specialty_extractor = SpecialtyExtractor(self.processor)
+        self.registry_extractor = RegistryExtractor(self.processor)
 
     def extract(
         self,
@@ -94,6 +96,13 @@ class LlmPipeline(IExtractor):
             )
             for field_name in ALL_SPECIALTY_FIELDS:
                 result.data[field_name] = specialty_data.get(field_name, "")
+
+            # Pass dedicado: Registro Policial em Outro Órgão (campo raro, buscado só no corpo
+            # narrativo — nunca no cabeçalho, onde vive o número do próprio RELINT).
+            registry_data = self.registry_extractor.extract(cleaned_text)
+            result.data["registry_number"] = registry_data.get("registry_number", "")
+            result.data["registry_agency"] = registry_data.get("registry_agency", "")
+            result.data["registry_year"] = registry_data.get("registry_year", "")
 
         except Exception as err:
             result.success = False

@@ -10,10 +10,11 @@ Em vez de uma única chamada monolítica pedindo 15+ campos em um só JSON pesad
 2. **Pass 2 — Localização & Georreferenciamento** (`extractors/location_extractor.py`, classe `LocationExtractor`, schema `LocationExtraction`): resolve endereço, número, bairro, município, unidade policial (BPM) e coordenadas. Este pass é **sempre autoritativo**: sobrescreve incondicionalmente os campos geográficos do resultado, mesmo quando retorna vazio, porque tem guardrails próprios (ver seção Guardrails abaixo).
 3. **Classificação determinística de `bm_group`** (`backend/engine/cleaners/bm_classifier.py`, `classify_bm_group()`): roda entre o Pass 2 e o Pass 3, sem LLM, priorizando nome do arquivo + assunto sobre o conteúdo completo como fallback.
 4. **Pass 3 — Especialidade** (`extractors/specialty_extractor.py`, classe `SpecialtyExtractor`): resolve os campos adicionais da especialidade identificada pelo `bm_group`. Campos binários/enum simples (`injured_victims`, `hostage_victim`, `recovered`, `location_type`) são resolvidos 100% por regex, sem LLM; campos livres genuinamente nuançados usam um schema Pydantic minúsculo específico daquela especialidade (`schemas/specialty_schemas.py`). Especialidades sem nenhum campo livre (`Roubo a Residência`, `Furto Qualificado`, `Outros`) nunca chamam a LLM.
+5. **Pass dedicado — Registro Policial em Outro Órgão** (`extractors/registry_extractor.py`, classe `RegistryExtractor`, schema `RegistryExtraction`): resolve `registry_number`/`registry_agency`/`registry_year` — um registro em outro órgão (DP/DPPA/Polícia Civil), campo raro e desconexo do número do próprio RELINT. Busca restrita ao corpo narrativo pós-`ANEXOS:` (nunca o cabeçalho, onde vive o número do próprio RELINT), guardrail de evidência literal (`text_contains`) e reclassificação determinística por contagem de dígitos (órgão ~6 dígitos, ano 4 dígitos, número raramente >4 — a ordem dos 3 números no texto não é confiável, o tamanho é). Ver ADR-0100.
 
-O resultado de cada pass é combinado em `result.data` dentro de `LlmPipeline.extract()`, com os passes 2 e 3 sempre sobrescrevendo incondicionalmente os campos que produzem (mesmo com valor vazio), para que uma resposta sem guardrail nunca vaze quando o pass dedicado corretamente absteve-se por falta de evidência.
+O resultado de cada pass é combinado em `result.data` dentro de `LlmPipeline.extract()`, com os passes 2, 3 e o de Registro sempre sobrescrevendo incondicionalmente os campos que produzem (mesmo com valor vazio), para que uma resposta sem guardrail nunca vaze quando o pass dedicado corretamente absteve-se por falta de evidência.
 
-> O antigo "Pass 1 legado" (chamada genérica via `rule.get_schema_model()`, tipicamente `IncidentReport`) foi removido. Com isso, `registry_number`/`registry_agency`/`registry_year`, `date_of_fact`/`time_of_fact`, `relint_type`, `location_types`, `main_fact` e `participants` ficam temporariamente sem extração dedicada pela LLM neste pipeline — todos com os defaults do Pydantic (vazio/`None`/`"Outros"`/`[]`) até serem reconstruídos campo a campo, seguindo o plano em [`../proposals/eliminacao-pass1-legado.md`](../proposals/eliminacao-pass1-legado.md). `participants` **não** cai automaticamente no fallback determinístico por regex (`extract_fallback_participants`) — esse fallback em `EtlService` é reservado exclusivamente ao modo 100% sem-IA (`extraction_method == "Regex (Sem IA)"`), para manter as duas chamadas (LLM e determinística) totalmente separadas.
+> O antigo "Pass 1 legado" (chamada genérica via `rule.get_schema_model()`, tipicamente `IncidentReport`) foi removido. `date_of_fact`/`time_of_fact`, `relint_type`, `location_types`, `main_fact` e `participants` ainda ficam temporariamente sem extração dedicada pela LLM neste pipeline — com os defaults do Pydantic (vazio/`None`/`"Outros"`/`[]`) até serem reconstruídos campo a campo, seguindo o plano em [`../proposals/eliminacao-pass1-legado.md`](../proposals/eliminacao-pass1-legado.md). `registry_number`/`registry_agency`/`registry_year` já foram reconstruídos (Pass dedicado acima). `participants` **não** cai automaticamente no fallback determinístico por regex (`extract_fallback_participants`) — esse fallback em `EtlService` é reservado exclusivamente ao modo 100% sem-IA (`extraction_method == "Regex (Sem IA)"`), para manter as duas chamadas (LLM e determinística) totalmente separadas.
 
 ## Estrutura de pastas do motor LLM
 
@@ -22,20 +23,23 @@ backend/engine/extractors/llm/
 ├── pipeline.py              # LlmPipeline — orquestrador dos passes
 ├── llm_processor.py         # ILlmProcessor — porta/interface abstrata
 ├── ollama_client.py         # OllamaClient — adapter concreto que fala com o Ollama local
-├── extractors/               # Um extrator por pass (Summary, Location, Specialty)
+├── extractors/               # Um extrator por pass (Summary, Location, Specialty, Registry)
 │   ├── summary_extractor.py
 │   ├── location_extractor.py
-│   └── specialty_extractor.py
+│   ├── specialty_extractor.py
+│   └── registry_extractor.py
 ├── schemas/                  # JSON Schemas Pydantic dinâmicos, por pass/especialidade
 │   ├── summary_schema.py
 │   ├── location_schema.py
 │   ├── address_schema.py
-│   └── specialty_schemas.py
+│   ├── specialty_schemas.py
+│   └── registry_schema.py
 ├── prompts/                   # Prompts especializados por pass
 │   ├── system_prompt.py
 │   ├── summary_prompt.py
 │   ├── address_prompt.py
-│   └── specialty_prompts.py
+│   ├── specialty_prompts.py
+│   └── registry_prompt.py
 ├── validators/
 │   └── llm_response_validator.py   # Sanitização e normalização de saída da LLM
 └── rules/                     # 7 classes Rule especializadas (HomicideRule etc.) — não usadas
@@ -57,6 +61,8 @@ Mesmo nos passes que chamam a LLM, uma camada de validação/normalização 100%
 - **Guardrails de enum fechado**: no Pass 3, valores de `fact_type`, `motivation` e `weapon_used` só são aceitos se baterem (tolerante a acento/caixa) com uma lista fechada de opções válidas (`_match_enum()`); fora da lista, o campo é descartado, nunca forçado a um valor.
 - **Sanitização de ruídos narrativos**: `sanitize_address_field()` (`location_extractor.py`) trunca links HTTP, expressões de coordenadas no meio da frase, verbos operacionais da BM ("foi acionada a guarnição...", "via telefone 190...") e referências comerciais entre parênteses antes de aceitar um valor de endereço.
 - **Detecção por regex com checagem de negação**: no Pass 3, campos binários (`injured_victims`, `hostage_victim`, `recovered`) são resolvidos por regex que verifica se há uma negação ("não", "sem") na mesma oração do termo encontrado, evitando falsos positivos de negação em oração anterior (`_has_negation_nearby()`).
+- **Restrição de busca ao corpo narrativo**: `RegistryExtractor` busca o registro em outro órgão só no texto pós-`ANEXOS:` (`extract_history_from_annex()`), nunca no cabeçalho — evita confundir com o número do próprio RELINT.
+- **Reclassificação determinística por contagem de dígitos**: `classify_registry_digits()` (`registry_extractor.py`) reordena `registry_number`/`registry_agency`/`registry_year` pelo tamanho em dígitos (órgão ~6, ano 4, número raramente >4), já que a LLM às vezes devolve os 3 valores na ordem errada — o tamanho é mais confiável que a posição no texto.
 
 Ver também a especificação exaustiva das 9 camadas de sanitização geográfica em ADR-090 (`docs/adr/`).
 
