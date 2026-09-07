@@ -1,37 +1,9 @@
 import pytest
 from unittest.mock import Mock, MagicMock
 from pathlib import Path
-from backend.engine.extractors.llm.rules.homicide_rule import HomicideRule
+from backend.engine.extractors.llm.rules.relint_rule import RelintRule
 from backend.task_manager.etl.etl_service import EtlService
 from backend.core.entities import IncidentReport
-
-def test_homicide_rule_keywords():
-    rule = HomicideRule()
-    
-    # Textos que devem passar na filtragem
-    assert rule.matches_filter("Ocorrência de homicídio no centro da cidade.") is True
-    assert rule.matches_filter("Foi constatado o óbito da vítima no local.") is True
-    assert rule.matches_filter("Corpo da vítima encaminhado para necropsia (cadáver).") is True
-    assert rule.matches_filter("Autores desferiram disparos de arma de fogo e a vítima veio a óbito.") is True
-    assert rule.matches_filter("Latrocínio tentado contra estabelecimento.") is True
-    assert rule.matches_filter("Caso grave de feminicídio tentado na residência.") is True
-    assert rule.matches_filter("Encontro de cadáver na beira do rio com perfurações de tiros.") is True
-    
-    # Textos com termos de exclusão forte mas contrabalançados por homicídio/feminicídio/morte/óbito (devem passar no pré-filtro)
-    assert rule.matches_filter("A vítima sofreu lesão corporal leve, mas acabou ocorrendo o homicídio consumado no local.") is True
-    assert rule.matches_filter("Vítima de lesão corporal seguida de morte.") is True
-    assert rule.matches_filter("Houve uma ocorrência de ameaça de morte.") is True
-    assert rule.matches_filter("Vítima lesionada e veio a óbito.") is True
-    assert rule.matches_filter("O suspeito possui antecedentes de roubo, mas cometeu homicídio.") is True
-    assert rule.matches_filter("Consulta ao sistema de registros policiais e outros fatos. Ocorrência de morte violenta por disparos.") is True
-    
-    # Textos que não devem passar na filtragem (exclusões e outros crimes)
-    assert rule.matches_filter("Furto simples de bicicleta em via pública.") is False
-    assert rule.matches_filter("Apreensão de objeto ilícito com suspeito.") is False
-    assert rule.matches_filter("Averiguação de atitude suspeita.") is False
-    assert rule.matches_filter("Lesão corporal leve em briga de bar.") is False
-    assert rule.matches_filter("A vítima teve ferimentos superficiais decorrentes de lesão leve.") is False
-    assert rule.matches_filter("Resposta ao pedido de busca PB 1490-2026-CI-DINT referente a investigação social.") is False
 
 def test_etl_service_with_rule_skips_processing():
     # Mocking dependencies - agora o processo NÃO pula e processa tudo
@@ -50,7 +22,7 @@ def test_etl_service_with_rule_skips_processing():
     mock_municipality_repo.get_by_name.return_value = None
 
     service = EtlService(mock_parser, mock_llm, mock_db, mock_registry, mock_person_repo)
-    rule = HomicideRule()
+    rule = RelintRule()
     
     progress_calls = []
     def on_progress(msg):
@@ -93,7 +65,7 @@ def test_etl_service_with_rule_processes_matching_file():
     mock_municipality_repo.get_by_name.return_value = None
 
     service = EtlService(mock_parser, mock_llm, mock_db, mock_registry, mock_person_repo)
-    rule = HomicideRule()
+    rule = RelintRule()
     
     filtered_calls = []
     sent_calls = []
@@ -109,11 +81,10 @@ def test_etl_service_with_rule_processes_matching_file():
     assert report.content == "Suspeito desferiu tiros e cometeu homicídio."
     assert report.main_fact == "homicídio consumado"
     # A LLM deve ter sido chamada com as perguntas específicas da regra e o schema model
-    from backend.core.entities import HomicideReport
     mock_llm.process_text.assert_called_once_with(
-        "Suspeito desferiu tiros e cometeu homicídio.", 
+        "Suspeito desferiu tiros e cometeu homicídio.",
         questions=rule.questions,
-        schema_model=HomicideReport,
+        schema_model=IncidentReport,
         pre_extracted_entities=[]
     )
     # O banco de dados deve ter sido salvo
@@ -140,7 +111,7 @@ def test_etl_service_with_rule_discards_post_llm_false_positive():
     mock_municipality_repo.get_by_name.return_value = None
 
     service = EtlService(mock_parser, mock_llm, mock_db, mock_registry, mock_person_repo)
-    rule = HomicideRule()
+    rule = RelintRule()
     
     filtered_calls = []
     sent_calls = []
@@ -172,7 +143,7 @@ def test_etl_service_skips_when_already_processed_in_registry():
     mock_municipality_repo = Mock()
 
     service = EtlService(mock_parser, mock_llm, mock_db, mock_registry, mock_person_repo)
-    rule = HomicideRule()
+    rule = RelintRule()
     
     progress_calls = []
     report = service.process_file(
@@ -188,38 +159,6 @@ def test_etl_service_skips_when_already_processed_in_registry():
     # Deve conter log informando que foi pulado pelo histórico
     assert any("Já processado" in msg for msg in progress_calls)
 
-def test_validate_qa_results_scenarios():
-    rule = HomicideRule()
-    
-    # Caso 1: Natureza correta e confirmada
-    assert rule.validate_qa_results({
-        "natureza": "homicídio consumado",
-        "resultado_morte": "óbito no local",
-        "content": "A vítima foi encontrada sem vida com perfurações."
-    }) is True
-
-    # Caso 2: Lesão corporal seguida de morte (natureza tem exclusão, mas resultado confirma óbito)
-    assert rule.validate_qa_results({
-        "natureza": "lesão corporal seguida de morte",
-        "resultado_morte": "óbito",
-        "content": "Após agressões a vítima faleceu no hospital."
-    }) is True
-
-    # Caso 3: Ameaça de morte (natureza é ameaça, mas sem óbito real)
-    assert rule.validate_qa_results({
-        "natureza": "ameaça",
-        "resultado_morte": "vítima ameaçada",
-        "content": "Autor prometeu causar a morte da vítima."
-    }) is False
-
-    # Caso 4: Roubo simples sem latrocínio nem morte
-    assert rule.validate_qa_results({
-        "natureza": "roubo",
-        "resultado_morte": "não informado",
-        "content": "Subtração de celular mediante grave ameaça."
-    }) is False
-
-
 def test_etl_service_skips_when_exists_in_database():
     mock_parser = Mock()
     mock_llm = Mock()
@@ -232,7 +171,7 @@ def test_etl_service_skips_when_exists_in_database():
     mock_municipality_repo = Mock()
 
     service = EtlService(mock_parser, mock_llm, mock_db, mock_registry, mock_person_repo)
-    rule = HomicideRule()
+    rule = RelintRule()
 
     progress_calls = []
     report = service.process_file(
