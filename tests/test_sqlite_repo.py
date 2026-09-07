@@ -56,6 +56,41 @@ def test_sqlite_repo_crud(tmp_path: Path):
     assert len(repo.get_all()) == 0
 
 
+def test_get_all_survives_homicide_report_without_registry_number(tmp_path: Path):
+    """
+    Regressão: `_build_report_from_row` tinha um fallback (linhas 555-558) que chamava
+    `hom_row.get(...)` em um `sqlite3.Row` — que não tem método `.get()` — sempre que um
+    RELINT classificado como Homicídio (linha em `homicidio_detalhes`) tivesse
+    `numero_registro` vazio na tabela principal `relints`. Esse fallback ficou dormente
+    enquanto o Pass 1 legado preenchia `registry_number`; depois da remoção do Pass 1
+    (ADR-0096), o campo passou a vir sempre vazio, tornando o bug sempre acionado e
+    derrubando silenciosamente todo RELINT de Homicídio de `get_all()` (o `except Exception:
+    pass` ali engolia o AttributeError sem log nenhum).
+    """
+    db_file = tmp_path / "test_relints_homicide.db"
+    repo = SqliteRepo(db_file)
+
+    report = IncidentReport(
+        source_file="relint_homicidio.pdf",
+        subject="Homicídio em Seberi - RS",
+        summary="Resumo do homicídio.",
+        content="Conteúdo completo.",
+        bm_group="Homicídio",
+        registry_number=""
+    )
+    doc_id = repo.save(report)
+    assert doc_id != ""
+
+    # Antes do fix, esta chamada lançava AttributeError dentro de _build_report_from_row
+    fetched = repo.get_by_id(doc_id)
+    assert fetched is not None
+    assert fetched.subject == "Homicídio em Seberi - RS"
+
+    all_reports = repo.get_all()
+    assert len(all_reports) == 1
+    assert all_reports[0].subject == "Homicídio em Seberi - RS"
+
+
 def test_sqlite_person_repo_crud(tmp_path: Path):
     db_file = tmp_path / "test_persons.db"
     person_repo = SqlitePersonRepo(db_file)

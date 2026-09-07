@@ -553,9 +553,9 @@ class SqliteRepo(IDatabaseRepo):
         
         # Fallback de bancos antigos onde o registro ficava em homicidio_detalhes
         if hom_row and not reg_num:
-            reg_num = hom_row["numero_registro"] if "numero_registro" in hom_row.keys() else hom_row.get("registry_number", "")
-            reg_agency = hom_row["orgao_registro"] if "orgao_registro" in hom_row.keys() else hom_row.get("registry_agency", "")
-            reg_year = hom_row["ano_registro"] if "ano_registro" in hom_row.keys() else hom_row.get("registry_year", "")
+            reg_num = hom_row["numero_registro"] if "numero_registro" in hom_row.keys() else (hom_row["registry_number"] if "registry_number" in hom_row.keys() else "")
+            reg_agency = hom_row["orgao_registro"] if "orgao_registro" in hom_row.keys() else (hom_row["registry_agency"] if "registry_agency" in hom_row.keys() else "")
+            reg_year = hom_row["ano_registro"] if "ano_registro" in hom_row.keys() else (hom_row["registry_year"] if "registry_year" in hom_row.keys() else "")
 
         subject = relint_row["assunto"] if "assunto" in relint_row.keys() else relint_row["subject"]
         main_fact = relint_row["fato_principal"] if "fato_principal" in relint_row.keys() else relint_row["main_fact"]
@@ -604,8 +604,8 @@ class SqliteRepo(IDatabaseRepo):
             fact_type = ""
             motivation = "Desconhecido"
             if hom_row:
-                fact_type = (hom_row["tipo_fato"] if "tipo_fato" in hom_row.keys() else hom_row.get("fact_type")) or ""
-                motivation = (hom_row["motivacao"] if "motivacao" in hom_row.keys() else hom_row.get("motivation")) or "Desconhecido"
+                fact_type = (hom_row["tipo_fato"] if "tipo_fato" in hom_row.keys() else (hom_row["fact_type"] if "fact_type" in hom_row.keys() else "")) or ""
+                motivation = (hom_row["motivacao"] if "motivacao" in hom_row.keys() else (hom_row["motivation"] if "motivation" in hom_row.keys() else "")) or "Desconhecido"
 
             report_data.update({
                 "fact_type": fact_type,
