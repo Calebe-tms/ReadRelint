@@ -215,14 +215,18 @@ class EtlService:
                 if not response_dict.get("summary") or not str(response_dict.get("summary")).strip():
                     response_dict["summary"] = extract_fallback_summary(final_content, subject=response_dict.get("subject", ""))
 
+            # date_of_fact/time_of_fact são sempre 100% determinísticos, independente do motor:
+            # o cabeçalho do RELINT é formulaico o bastante para não precisar (nem se beneficiar)
+            # de uma chamada à LLM (ver docs/proposals/eliminacao-pass1-legado.md).
+            if not response_dict.get("date_of_fact"):
+                response_dict["date_of_fact"] = extract_date_of_fact(final_content) or "Não Informado"
+            if not response_dict.get("time_of_fact"):
+                response_dict["time_of_fact"] = extract_time_of_fact(final_content) or "Não Informado"
+
             # SE MODO REGEX: Garante preenchimento de campos determinísticos adicionais
             if extraction_method == "Regex (Sem IA)":
                 if not response_dict.get("subject"):
                     response_dict["subject"] = extract_subject_fallback(final_content, filename)
-                if not response_dict.get("date_of_fact"):
-                    response_dict["date_of_fact"] = extract_date_of_fact(final_content) or "Não Informado"
-                if not response_dict.get("time_of_fact"):
-                    response_dict["time_of_fact"] = extract_time_of_fact(final_content) or "Não Informado"
 
                 if not response_dict.get("map_url") or not response_dict.get("coordinates"):
                     r_map, r_coords = resolve_coordinates_and_map_info(final_content)
