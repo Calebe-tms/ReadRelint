@@ -16,4 +16,4 @@ trigger: always_on
 ## Comunicação com Usuário
 - **OBRIGATÓRIO:** Todas as mensagens, respostas e comunicação com o usuário devem ser em português brasileiro (pt-BR)
 - Inclui: explicações, perguntas, atualizações, relatórios, feedback
-- Exceção: URLs, nomes de arquivos, nomes de bibliotecas, código-fonte permanecem em seus formatos originais
+- Exceção: URLs, nomes de arquivos, nomes de bibliotecas, código-fonte permanecem em seus formatos originais 
