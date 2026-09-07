@@ -32,7 +32,12 @@ describe('Serviço de RELINTs (relintsService.js)', () => {
 
     const result = await getRelints({ search: 'Disputa', bm_group: 'Homicídio', relint_type: 'Todos' });
 
-    expect(apiClient.get).toHaveBeenCalledWith('/api/v1/relints?search=Disputa&bm_group=Homic%C3%ADdio');
+    // A URL real também recebe um '_t' de cache-busting no final (Date.now()), por isso
+    // o match é por prefixo em vez de string exata.
+    expect(apiClient.get).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/relints?search=Disputa&bm_group=Homic%C3%ADdio'),
+      { headers: { 'Cache-Control': 'no-cache' } }
+    );
     expect(result[0].code).toBe('RELINT-001');
   });
 
@@ -51,20 +56,28 @@ describe('Serviço de RELINTs (relintsService.js)', () => {
   });
 
   it('deve calcular estatísticas de dashboard corretamente a partir da lista', async () => {
-    vi.mocked(apiClient.get).mockResolvedValue([
-      {
-        id: '1',
-        bm_group: 'Homicídio',
-        extraction_method: 'Ollama (Llama 3.2)',
-        participants: [{ name: 'A' }, { name: 'B' }]
-      },
-      {
-        id: '2',
-        bm_group: 'Tráfico de Drogas',
-        extraction_method: 'Regex (Sem IA)',
-        participants: [{ name: 'C' }]
+    // getDashboardStats() tenta primeiro o endpoint agregado '/relints/stats'; simulamos
+    // esse endpoint indisponível para exercitar o cálculo de fallback a partir da lista,
+    // que é o que este teste valida.
+    vi.mocked(apiClient.get).mockImplementation((/** @type {string} */ url) => {
+      if (url.includes('/relints/stats')) {
+        return Promise.reject(new Error('Endpoint de stats indisponível neste teste'));
       }
-    ]);
+      return Promise.resolve([
+        {
+          id: '1',
+          bm_group: 'Homicídio',
+          extraction_method: 'Ollama (Llama 3.2)',
+          participants: [{ name: 'A' }, { name: 'B' }]
+        },
+        {
+          id: '2',
+          bm_group: 'Tráfico de Drogas',
+          extraction_method: 'Regex (Sem IA)',
+          participants: [{ name: 'C' }]
+        }
+      ]);
+    });
 
     const stats = await getDashboardStats();
 
