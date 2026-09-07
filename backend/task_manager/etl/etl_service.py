@@ -208,9 +208,12 @@ class EtlService:
             if "content" in response_dict:
                 del response_dict["content"]
 
-            # Garante que a síntese nunca fique vazia, mesmo se o modelo omitir o campo
-            if not response_dict.get("summary") or not str(response_dict.get("summary")).strip():
-                response_dict["summary"] = extract_fallback_summary(final_content, subject=response_dict.get("subject", ""))
+            # Motor 100% determinístico: garante que a síntese nunca fique vazia. Não se aplica
+            # ao modo Ollama (IA) — lá, o próprio SummaryExtractor já é responsável por seu
+            # guardrail interno; se mesmo assim vier vazio, fica em branco (ver ADR-0099).
+            if extraction_method == "Regex (Sem IA)":
+                if not response_dict.get("summary") or not str(response_dict.get("summary")).strip():
+                    response_dict["summary"] = extract_fallback_summary(final_content, subject=response_dict.get("subject", ""))
 
             # SE MODO REGEX: Garante preenchimento de campos determinísticos adicionais
             if extraction_method == "Regex (Sem IA)":
@@ -248,9 +251,12 @@ class EtlService:
             )
 
             raw_participants = response_dict.get("participants", [])
-            if not raw_participants:
+            if not raw_participants and extraction_method == "Regex (Sem IA)":
+                # Motor 100% determinístico: extração de participantes via regex.
+                # Não se aplica ao modo Ollama (IA) — esse caminho fica sem extração de
+                # participantes até um pass LLM dedicado ser construído (ver
+                # docs/proposals/eliminacao-pass1-legado.md), sem cair de volta pro regex.
                 from backend.engine.cleaners.text_cleaner import extract_fallback_participants
-                # Regex fallback de último recurso caso GLiNER e LLM falhem
                 raw_participants = extract_fallback_participants(final_content)
             from backend.engine.cleaners.name_parser import BrazilianNameParser
 

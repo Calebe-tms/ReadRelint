@@ -12,22 +12,6 @@ from backend.core.entities import IncidentReport
 
 logger = logging.getLogger(__name__)
 
-# Campos que o Passo 2 (LocationExtractor) e a classificação determinística (classify_bm_group)
-# já resolvem com guardrails próprios e SEMPRE sobrescrevem depois (ver LlmPipeline.extract()) —
-# pedir a resposta da LLM para eles no Pass 1 legado é custo de inferência sem uso nenhum.
-SUPERSEDED_LEGACY_FIELDS = (
-    "bm_group", "address", "municipality", "neighborhood",
-    "police_unit", "coordinates", "map_url",
-)
-
-
-def _strip_superseded_fields(schema: dict) -> dict:
-    """Remove do JSON Schema campos que o Pass 1 legado (IncidentReport puro) não precisa mais pedir à LLM."""
-    if "properties" in schema:
-        for field_name in SUPERSEDED_LEGACY_FIELDS:
-            schema["properties"].pop(field_name, None)
-    return schema
-
 
 class OllamaClient(ILlmProcessor):
     """
@@ -73,10 +57,6 @@ class OllamaClient(ILlmProcessor):
         if "properties" in schema:
             schema["properties"].pop("source_file", None)
             schema["properties"].pop("content", None)
-        # Pass 1 legado (schema genérico IncidentReport): remove campos já superados pelos
-        # passos determinísticos/dedicados posteriores, que sempre sobrescrevem a resposta.
-        if model_to_use is IncidentReport:
-            schema = _strip_superseded_fields(schema)
         schema_str = json.dumps(schema, indent=2, ensure_ascii=False)
 
         from backend.engine.extractors.llm.prompts import build_extraction_prompt

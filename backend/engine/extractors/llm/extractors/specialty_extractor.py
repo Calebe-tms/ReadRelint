@@ -45,8 +45,8 @@ SPECIALTY_SCHEMAS: Dict[str, Type[BaseModel]] = {
 
 # União de TODOS os campos que este extrator pode produzir (determinísticos + os de cada
 # schema de especialidade). O chamador (LlmPipeline) usa esta lista para sobrescrever
-# incondicionalmente 'result.data', garantindo que nenhuma resposta crua e sem guardrail do
-# Pass 1 legado (ex: 'motivation' fora do enum) sobreviva quando o Passo 3 descarta seu campo.
+# incondicionalmente 'result.data', garantindo que nenhum valor sem guardrail (ex: 'motivation'
+# fora do enum) sobreviva quando o Passo 3 descarta seu campo.
 ALL_SPECIALTY_FIELDS: Tuple[str, ...] = tuple(sorted({
     "location_type", "hostage_victim", "injured_victims", "recovered",
     *(field_name for schema in {

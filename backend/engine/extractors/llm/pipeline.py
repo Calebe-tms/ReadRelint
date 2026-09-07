@@ -6,7 +6,6 @@ ou fallbacks determinísticos/regex.
 """
 
 from typing import Any, Dict, Optional
-from backend.core.entities import IncidentReport
 from backend.engine.cleaners.text_cleaner import clean_relint_text
 from backend.engine.extractors.base import ExtractionAlert, ExtractionResult, IExtractor
 from backend.engine.extractors.llm.llm_processor import ILlmProcessor
@@ -59,29 +58,8 @@ class LlmPipeline(IExtractor):
 
         cleaned_text = clean_relint_text(text)
 
-        # Determina o Schema e perguntas de suporte da regra
-        questions = getattr(rule, "questions", {}) if rule else {}
-        schema_model = rule.get_schema_model() if rule and hasattr(rule, "get_schema_model") else IncidentReport
-
         try:
-            raw_response = self.processor.process_text(
-                cleaned_text,
-                questions=questions,
-                schema_model=schema_model,
-                pre_extracted_entities=pre_extracted_entities
-            )
-
-
-            if isinstance(raw_response, dict):
-                from backend.engine.extractors.llm.validators.llm_response_validator import validate_and_normalize_llm_response
-                result.data = validate_and_normalize_llm_response(raw_response)
-            else:
-                result.data = {}
-                result.add_alert(
-                    level="warning",
-                    stage="llm_json_parser",
-                    message="Resposta da LLM não pôde ser interpretada como um dicionário JSON."
-                )
+            result.data = {}
 
             # Pass 1: Extração Dedicada de Síntese e Assunto (Alta Fidelidade)
             summary_data = self.summary_extractor.extract(cleaned_text, filename=filename)
@@ -108,10 +86,9 @@ class LlmPipeline(IExtractor):
             result.data["bm_group"] = bm_group
 
             # Passo 3: Extração Dedicada de Campos de Especialidade (só quando o bm_group tem algum).
-            # Sobrescreve incondicionalmente, como no Passo 2: se o Passo 3 descartou um campo por
-            # falta de evidência/enum inválido, isso deve prevalecer sobre a resposta crua e sem
-            # guardrail do Pass 1 legado (ex: 'motivation' fora do enum aceito pelo Passo 3, mas
-            # aceita pela normalização mais permissiva de HomicideReport na leitura/gravação).
+            # Sempre grava o resultado do Passo 3 (mesmo vazio): se o campo foi descartado por
+            # falta de evidência/enum inválido, isso é a resposta correta, não deve ser sobrescrito
+            # por nenhum valor sem guardrail.
             specialty_data = self.specialty_extractor.extract(
                 cleaned_text, bm_group=bm_group, neighborhood=result.data.get("neighborhood", "")
             )

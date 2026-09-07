@@ -3,7 +3,6 @@ from unittest.mock import Mock, MagicMock
 from pathlib import Path
 from backend.engine.extractors.llm.rules.relint_rule import RelintRule
 from backend.task_manager.etl.etl_service import EtlService
-from backend.core.entities import IncidentReport
 
 def test_etl_service_with_rule_skips_processing():
     # Mocking dependencies - agora o processo NÃO pula e processa tudo
@@ -42,8 +41,9 @@ def test_etl_service_with_rule_skips_processing():
     
     # Não deve retornar None pois não há mais descarte
     assert report is not None
-    assert report.main_fact == "furto"
-    mock_llm.process_text.assert_called_once()
+    assert report.content == "Furto de veículo na garagem da residência."
+    # Pipeline multi-pass: Síntese, Localização e Especialidade (sem o Pass 1 legado)
+    assert mock_llm.process_text.call_count == 3
     mock_db.save.assert_called_once()
     assert len(filtered_calls) == 0
     assert len(sent_calls) == 1
@@ -79,14 +79,8 @@ def test_etl_service_with_rule_processes_matching_file():
     
     assert report is not None
     assert report.content == "Suspeito desferiu tiros e cometeu homicídio."
-    assert report.main_fact == "homicídio consumado"
-    # A LLM deve ter sido chamada com as perguntas específicas da regra e o schema model
-    mock_llm.process_text.assert_called_once_with(
-        "Suspeito desferiu tiros e cometeu homicídio.",
-        questions=rule.questions,
-        schema_model=IncidentReport,
-        pre_extracted_entities=[]
-    )
+    # Pipeline multi-pass: Síntese, Localização e Especialidade (sem o Pass 1 legado)
+    assert mock_llm.process_text.call_count == 3
     # O banco de dados deve ter sido salvo
     mock_db.save.assert_called_once()
     assert len(filtered_calls) == 0
@@ -126,8 +120,9 @@ def test_etl_service_with_rule_discards_post_llm_false_positive():
     )
     
     assert report is not None
-    assert report.main_fact == "lesão corporal leve"
-    mock_llm.process_text.assert_called_once()
+    assert report.content == "Foi registrado um homicídio consumado no local."
+    # Pipeline multi-pass: Síntese, Localização e Especialidade (sem o Pass 1 legado)
+    assert mock_llm.process_text.call_count == 3
     mock_db.save.assert_called_once()
     assert len(filtered_calls) == 0
     assert len(sent_calls) == 1
