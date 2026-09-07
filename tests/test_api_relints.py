@@ -129,3 +129,50 @@ def test_update_relint_homicide_fields(client):
 def test_update_relint_not_found(client):
     put_res = client.put("/api/v1/relints/999999", json={"assunto": "Inexistente"})
     assert put_res.status_code == 404
+
+
+def test_all_processed_relints_appear_in_dashboard_listing(tmp_path: Path):
+    """
+    Regressão ampla: simula uma pasta com um RELINT de cada especialidade (BmGroup) já
+    processado e garante que TODOS aparecem na listagem do dashboard, tanto na camada de
+    repositório (SqliteRepo.get_all()) quanto na camada de API (GET /api/v1/relints).
+
+    Motivação: um RELINT já lido/salvo com sucesso pode ainda assim sumir do dashboard se
+    algo na leitura de volta (_build_report_from_row) lançar exceção que get_all() engole
+    silenciosamente (`except Exception: pass`) — foi exatamente assim que os RELINTs de
+    Homicídio desapareceram (AttributeError de `hom_row.get()` em um sqlite3.Row, corrigido
+    em backend/database/sqlite_repo.py). Este teste itera por todas as especialidades para
+    detectar qualquer regressão equivalente em qualquer uma delas, não só em Homicídio.
+    """
+    db_file = tmp_path / "test_all_specialties_listing.db"
+    repo = SqliteRepo(db_file)
+
+    expected_source_files = []
+    for bm_group in BmGroup:
+        source_file = f"RELINT_{bm_group.name}.pdf"
+        expected_source_files.append(source_file)
+        report = IncidentReport(
+            source_file=source_file,
+            subject=f"Ocorrência de teste - {bm_group.value}",
+            summary=f"Resumo de teste para {bm_group.value}.",
+            content="Conteúdo integral de teste.",
+            bm_group=bm_group.value,
+        )
+        repo.save(report)
+
+    # 1. Camada de repositório: nenhum RELINT processado pode sumir de get_all()
+    all_reports = repo.get_all()
+    assert len(all_reports) == len(expected_source_files)
+    assert {r.source_file for r in all_reports} == set(expected_source_files)
+
+    # 2. Camada de API: o dashboard consome este endpoint, não o repositório diretamente
+    app.dependency_overrides[get_db_repo] = lambda: repo
+    try:
+        api_client = TestClient(app)
+        response = api_client.get("/api/v1/relints")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == len(expected_source_files)
+        assert {r["arquivo_origem"] for r in data} == set(expected_source_files)
+    finally:
+        app.dependency_overrides.clear()
