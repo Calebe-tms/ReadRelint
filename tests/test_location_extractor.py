@@ -203,3 +203,62 @@ def test_extract_resolves_police_unit_deterministically_without_llm_field():
     }))
     result = extractor.extract(text, filename="teste.pdf")
     assert result["police_unit"] == "16º BPM"
+
+
+# ---------------------------------------------------------------------------
+# location_types (categorização livre do tipo de local, sem enum fechado)
+# ---------------------------------------------------------------------------
+
+def test_extract_captures_location_types_list():
+    text = "ASSUNTO: FURTO EM CRUZ ALTA - RS\nO fato ocorreu em uma propriedade rural isolada."
+    extractor = LocationExtractor(FakeProcessor({
+        "street": None, "number": None, "neighborhood": None,
+        "municipality": "Cruz Alta", "coordinates": None, "map_url": None,
+        "location_types": ["Propriedade Rural"],
+    }))
+    result = extractor.extract(text, filename="teste.pdf")
+    assert result["location_types"] == ["Propriedade Rural"]
+
+
+def test_extract_location_types_defaults_to_empty_list_when_absent():
+    text = "ASSUNTO: FURTO EM CRUZ ALTA - RS\nSem detalhes adicionais do local."
+    extractor = LocationExtractor(FakeProcessor({
+        "street": None, "number": None, "neighborhood": None,
+        "municipality": "Cruz Alta", "coordinates": None, "map_url": None,
+        "location_types": None,
+    }))
+    result = extractor.extract(text, filename="teste.pdf")
+    assert result["location_types"] == []
+
+
+def test_extract_location_types_filters_placeholders_and_dedupes():
+    text = "ASSUNTO: FURTO EM CRUZ ALTA - RS\nO fato ocorreu em uma escola municipal."
+    extractor = LocationExtractor(FakeProcessor({
+        "street": None, "number": None, "neighborhood": None,
+        "municipality": "Cruz Alta", "coordinates": None, "map_url": None,
+        "location_types": ["Escolas", "N/A", "escolas", "", "None"],
+    }))
+    result = extractor.extract(text, filename="teste.pdf")
+    assert result["location_types"] == ["Escolas"]
+
+
+def test_extract_location_types_caps_at_five_categories():
+    text = "ASSUNTO: FURTO EM CRUZ ALTA - RS\nMúltiplas características do local."
+    extractor = LocationExtractor(FakeProcessor({
+        "street": None, "number": None, "neighborhood": None,
+        "municipality": "Cruz Alta", "coordinates": None, "map_url": None,
+        "location_types": ["A", "B", "C", "D", "E", "F", "G"],
+    }))
+    result = extractor.extract(text, filename="teste.pdf")
+    assert result["location_types"] == ["A", "B", "C", "D", "E"]
+
+
+def test_extract_location_types_ignores_non_list_response():
+    text = "ASSUNTO: FURTO EM CRUZ ALTA - RS\nSem detalhes adicionais do local."
+    extractor = LocationExtractor(FakeProcessor({
+        "street": None, "number": None, "neighborhood": None,
+        "municipality": "Cruz Alta", "coordinates": None, "map_url": None,
+        "location_types": "Propriedade Rural",
+    }))
+    result = extractor.extract(text, filename="teste.pdf")
+    assert result["location_types"] == []

@@ -77,6 +77,7 @@ class LlmPipeline(IExtractor):
             location_data = self.location_extractor.extract(cleaned_text, filename=filename)
             for loc_key in ["address", "municipality", "neighborhood", "police_unit", "coordinates", "map_url", "geo_precision"]:
                 result.data[loc_key] = location_data.get(loc_key, "")
+            result.data["location_types"] = location_data.get("location_types", [])
 
             # Classificação determinística de bm_group (filename+assunto primeiro, conteúdo como fallback)
             # ANTES do Passo 3, para que o schema de especialidade correto seja escolhido.

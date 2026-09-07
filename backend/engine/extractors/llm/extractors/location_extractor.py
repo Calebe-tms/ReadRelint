@@ -351,7 +351,8 @@ class LocationExtractor:
             "address": "",
             "coordinates": raw_coords,
             "map_url": raw_map_url,
-            "geo_precision": precision_level
+            "geo_precision": precision_level,
+            "location_types": []
         }
 
         if not text or not text.strip():
@@ -398,6 +399,24 @@ class LocationExtractor:
                 if extracted_map and extracted_map.lower() not in ["none", "null", ""] and not data["map_url"]:
                     if "maps.app.goo.gl" in extracted_map or "google.com/maps" in extracted_map:
                         data["map_url"] = extracted_map
+
+                # Categorização livre do tipo de local (sem enum fechado, sem guardrail de
+                # evidência literal — é classificação de contexto, não uma citação do texto).
+                # Só descarta placeholders óbvios, dedupe e limita a 5 categorias.
+                raw_types = raw_response.get("location_types")
+                if isinstance(raw_types, list):
+                    seen_types = set()
+                    clean_types = []
+                    for item in raw_types:
+                        cleaned = sanitize_address_field(str(item or "").strip())
+                        if not cleaned or cleaned.lower() in ["none", "null", "n/a", "não informado"]:
+                            continue
+                        key = cleaned.lower()
+                        if key in seen_types:
+                            continue
+                        seen_types.add(key)
+                        clean_types.append(cleaned)
+                    data["location_types"] = clean_types[:5]
 
         except Exception as err:
             logger.error(f"Erro na execução do LocationExtractor: {err}. Mantendo fallback.")
