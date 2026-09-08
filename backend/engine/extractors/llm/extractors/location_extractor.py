@@ -3,7 +3,9 @@
 Extrator especializado de Localização, Endereço e Georreferenciamento via LLM (Passo 2 do Pipeline Multi-Pass).
 """
 
+import json
 import logging
+import os
 import re
 import unicodedata
 import urllib.parse
@@ -121,21 +123,64 @@ def extract_municipality_from_context(text: str, filename: str = "") -> str:
     Extrai deterministicamente o município a partir do Assunto ou do nome do arquivo.
     """
     if text:
-        # Padrão: ASSUNTO: ... EM [CIDADE] - RS
-        m_assunto = re.search(r'(?i)ASSUNTO\s*:\s*.*?\bem\s+([A-Za-zÀ-ÿ\s]+?)\s*-\s*RS', text)
+        # Padrão: ASSUNTO: ... EM [CIDADE] - RS. Prefixo ".*" (guloso, não ".*?") é proposital:
+        # quando o Assunto tem mais de um "em" antes da cidade (ex: "...em face de policial
+        # militar em serviço em Panambi - RS"), o backtracking do quantificador guloso força o
+        # match a pegar o ÚLTIMO "em" antes de "- RS" (a cidade de verdade), não o primeiro.
+        m_assunto = re.search(r'(?i)ASSUNTO\s*:\s*.*\bem\s+([A-Za-zÀ-ÿ\s]+?)\s*-\s*RS', text)
         if m_assunto:
             muni = m_assunto.group(1).strip()
             if len(muni) > 2:
                 return muni.title() if muni.isupper() else muni
 
     if filename:
-        # Padrão no nome do arquivo: ... em [CIDADE] - RS.pdf
-        m_fn = re.search(r'(?i)\bem\s+([A-Za-zÀ-ÿ\s]+?)\s*-\s*RS', filename)
+        # Mesmo raciocínio do prefixo guloso acima, aplicado ao nome do arquivo.
+        m_fn = re.search(r'(?i).*\bem\s+([A-Za-zÀ-ÿ\s]+?)\s*-\s*RS', filename)
         if m_fn:
             muni = m_fn.group(1).strip()
             if len(muni) > 2:
                 return muni.title() if muni.isupper() else muni
 
+    return ""
+
+
+_RS_MUNICIPIOS_CACHE: Optional[set] = None
+
+
+def _get_rs_municipios_set() -> set:
+    """Carrega em cache (singleton) o conjunto normalizado dos 497 municípios do RS (IBGE)."""
+    global _RS_MUNICIPIOS_CACHE
+    if _RS_MUNICIPIOS_CACHE is not None:
+        return _RS_MUNICIPIOS_CACHE
+
+    json_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "deterministic", "resources", "municipios_rs.json"
+    )
+    json_path = os.path.normpath(json_path)
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            nomes = json.load(f)
+            _RS_MUNICIPIOS_CACHE = {normalize_for_match(n) for n in nomes if n}
+    except Exception:
+        _RS_MUNICIPIOS_CACHE = set()
+    return _RS_MUNICIPIOS_CACHE
+
+
+def validate_municipality(candidate: str) -> str:
+    """
+    Valida um candidato a município em 2 níveis (regra confirmada com o usuário): primeiro
+    contra os 41 municípios com BPM territorial conhecido (MUNICIPALITY_TO_BATTALION, mais
+    provável — é a área de cobertura do CRPM/AJ), depois contra os 497 municípios do RS
+    (IBGE). Sem bater em nenhum dos dois, o candidato não é um município real (ex: texto
+    corrido capturado por engano) — retorna vazio em vez de manter o valor suspeito.
+    """
+    if not candidate:
+        return ""
+    norm = normalize_for_match(candidate)
+    if norm in MUNICIPALITY_TO_BATTALION:
+        return candidate
+    if norm in _get_rs_municipios_set():
+        return candidate
     return ""
 
 
@@ -165,6 +210,15 @@ def resolve_short_maps_url(url: str, timeout: float = 3.0) -> Tuple[str, str]:
         return url, ""
 
 
+# Placeholders textuais que a LLM às vezes devolve como string literal (ex: "null" em vez do
+# JSON null) em qualquer campo de localização — nunca devem ser persistidos como valor real.
+INVALID_PLACEHOLDERS = {
+    "sem informação", "sem informacao", "sem informação específica", "sem informacao especifica",
+    "não informado", "nao informado", "não consta", "nao consta", "não possui", "nao possui",
+    "n/i", "n/a", "none", "null", "desconhecido", "xxx", "-"
+}
+
+
 def format_google_standard_address(
     street: str = "",
     number: str = "",
@@ -175,12 +229,6 @@ def format_google_standard_address(
     Monta o endereço no padrão oficial: Logradouro, nº [ou S/N] - Bairro, Município - RS
     Descarta automaticamente placeholders como 'Sem informação', 'Não informado', etc.
     """
-    INVALID_PLACEHOLDERS = {
-        "sem informação", "sem informacao", "não informado", "nao informado",
-        "não consta", "nao consta", "não possui", "nao possui", "n/i", "n/a",
-        "none", "null", "desconhecido", "xxx", "-"
-    }
-
     clean_street = sanitize_address_field(street or "")
     clean_number = sanitize_address_field(number or "")
     clean_neigh = sanitize_address_field(neighborhood or "")
@@ -339,8 +387,10 @@ class LocationExtractor:
         else:
             precision_level = "baixa"
 
-        # Extrai município determinístico do Assunto ou do nome do arquivo
-        fb_muni = extract_municipality_from_context(text, filename=filename)
+        # Extrai município determinístico do Assunto ou do nome do arquivo, validado contra
+        # a lista de municípios conhecidos (ver validate_municipality) — descarta capturas
+        # de regex que peguem texto corrido em vez de um nome de cidade real.
+        fb_muni = validate_municipality(extract_municipality_from_context(text, filename=filename))
 
         data: Dict[str, Any] = {
             "street": "",
@@ -380,8 +430,8 @@ class LocationExtractor:
                 # mesmo quando a LLM extrai um nome de cidade diferente citado em outro trecho do texto.
                 if not fb_muni:
                     extracted_muni = sanitize_address_field(str(raw_response.get("municipality") or "").strip())
-                    if extracted_muni and len(extracted_muni) > 2:
-                        data["municipality"] = extracted_muni
+                    if extracted_muni and len(extracted_muni) > 2 and extracted_muni.lower() not in INVALID_PLACEHOLDERS:
+                        data["municipality"] = validate_municipality(extracted_muni)
 
                 # Validação anti-alucinação de coordenadas:
                 # Só aceita coordenadas da LLM se os dígitos existirem literalmente no texto

@@ -537,10 +537,17 @@ class SqliteRepo(IDatabaseRepo):
         part_rows = cursor.fetchall()
         participants = []
         for pr in part_rows:
+            p_nome = pr["nome"] or ""
+            p_documento = pr["documento"] or ""
+            # documento pode guardar a chave sintética (nome em minúsculo) quando não há RG/CPF
+            # real (ADR-0101, eliminação de chave_pessoa) — nesse caso não é um documento de
+            # verdade, não deve aparecer como tal (mesma blindagem de sqlite_person_repo.py).
+            if p_documento and p_documento.lower() == p_nome.strip().lower():
+                p_documento = ""
             participants.append(Participant(
-                name=pr["nome"],
+                name=p_nome,
                 nickname=pr["alcunha"] or "",
-                document=pr["documento"] or "",
+                document=p_documento,
                 background=pr["antecedentes"] or "",
                 participation_type=pr["tipo_participacao"] or "Acusado",
                 photo_path=pr["caminho_foto"] or ""

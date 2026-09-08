@@ -20,6 +20,18 @@ Hierarquia de prioridade (maior especificidade vence):
 import re
 
 
+# Trecho que descreve o histórico criminal de alguém (ex: "possui antecedentes por homicídio")
+# fala do PASSADO da pessoa, não do fato que este RELINT está relatando agora — remover antes
+# da Passada 2 evita que uma menção incidental nos antecedentes classifique o RELINT inteiro
+# com a especialidade errada (ex: RELINT de estupro classificado como Homicídio porque o
+# suspeito "possui antecedentes por homicídio").
+_ANTECEDENTES_PATTERN = re.compile(r"antecedente[s]?\s+(?:criminais?\s+)?por\s+[^.]*\.", re.IGNORECASE)
+
+
+def _strip_antecedentes(text: str) -> str:
+    return _ANTECEDENTES_PATTERN.sub(" ", text)
+
+
 # ---------------------------------------------------------------------------
 # Padrões de classificação ordenados por especificidade decrescente
 # Cada entrada é (BmGroup_value, [patterns])
@@ -158,8 +170,9 @@ def classify_bm_group(
             if re.search(pattern, primary, re.IGNORECASE):
                 return bm_value
 
-    # Passada 2: Busca no texto completo do conteúdo como fallback
-    secondary = (content or "").lower()
+    # Passada 2: Busca no texto completo do conteúdo como fallback, excluindo trechos que
+    # descrevem antecedentes criminais (histórico da pessoa, não o fato relatado agora).
+    secondary = _strip_antecedentes(content or "").lower()
     full_corpus = f"{primary} {secondary}"
     for bm_value, patterns in _CLASSIFICATION_RULES:
         for pattern in patterns:

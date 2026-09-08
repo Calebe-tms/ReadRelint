@@ -5,7 +5,7 @@ from backend.engine.parsers.file_parser import IFileParser
 from backend.engine.extractors.llm.llm_processor import ILlmProcessor
 from backend.database.database_repo import IDatabaseRepo
 from backend.database.person_repo import IPersonRepo
-from backend.core.entities import IncidentReport, Person, Participant
+from backend.core.entities import IncidentReport, Participant
 from backend.engine.cleaners.text_cleaner import (
     clean_relint_text,
     extract_history_from_annex,
@@ -219,9 +219,9 @@ class EtlService:
             # o cabeçalho do RELINT é formulaico o bastante para não precisar (nem se beneficiar)
             # de uma chamada à LLM (ver docs/proposals/eliminacao-pass1-legado.md).
             if not response_dict.get("date_of_fact"):
-                response_dict["date_of_fact"] = extract_date_of_fact(final_content) or "Não Informado"
+                response_dict["date_of_fact"] = extract_date_of_fact(final_content)
             if not response_dict.get("time_of_fact"):
-                response_dict["time_of_fact"] = extract_time_of_fact(final_content) or "Não Informado"
+                response_dict["time_of_fact"] = extract_time_of_fact(final_content)
 
             # SE MODO REGEX: Garante preenchimento de campos determinísticos adicionais
             if extraction_method == "Regex (Sem IA)":
@@ -360,46 +360,12 @@ class EtlService:
                 if on_progress: on_progress(f"[{filename}] Aviso: IA não seguiu estritamente o Schema. Salvando com reconstrução segura.")
                 report = schema_model.model_construct(_fields_set=None, **report_data)
 
-            # Salva o RELINT no banco central
+            # Salva o RELINT no banco central — já grava pessoas/relint_participantes pros
+            # participantes do report (ver SqliteRepo.save()). Não existe um segundo upsert
+            # via person_repo aqui de propósito: havia um laço redundante que duplicava a
+            # pessoa (chave calculada com o documento sem limpar pontuação, divergindo da
+            # chave já salva acima) — ver auditoria de 2026-09.
             self.database_repo.save(report)
-
-            # Upsert de Participantes no banco de Pessoas
-            for participant in (report.participants or []):
-                raw_name = participant.name if isinstance(participant, Participant) else (participant.get("name") if isinstance(participant, dict) else "")
-                p_name = str(raw_name).strip() if (raw_name and not isinstance(raw_name, bool)) else ""
-                if not p_name:
-                    continue
-                
-                raw_doc = participant.document if isinstance(participant, Participant) else (participant.get("document") if isinstance(participant, dict) else "")
-                p_doc = str(raw_doc).strip() if (raw_doc and not isinstance(raw_doc, bool)) else ""
-
-                raw_nick = participant.nickname if isinstance(participant, Participant) else (participant.get("nickname") if isinstance(participant, dict) else "")
-                p_nick = str(raw_nick).strip() if (raw_nick and not isinstance(raw_nick, bool)) else ""
-
-                raw_photo = participant.photo_path if isinstance(participant, Participant) else (participant.get("photo_path") if isinstance(participant, dict) else "")
-                p_photo = str(raw_photo).strip() if (raw_photo and not isinstance(raw_photo, bool)) else ""
-
-                person_id = p_doc if p_doc else p_name.lower()
-                existing_person = self.person_repo.get_by_id(person_id)
-                
-                if existing_person:
-                    if filename not in existing_person.linked_relints:
-                        existing_person.linked_relints.append(filename)
-                    if p_nick and p_nick not in existing_person.aliases:
-                        existing_person.aliases.append(p_nick)
-                    if p_photo and p_photo not in existing_person.photos:
-                        existing_person.photos.append(p_photo)
-                    self.person_repo.update(existing_person)
-                else:
-                    new_person = Person(
-                        person_id=person_id,
-                        name=p_name,
-                        aliases=[p_nick] if p_nick else [],
-                        documents=[p_doc] if p_doc else [],
-                        photos=[p_photo] if p_photo else [],
-                        linked_relints=[filename]
-                    )
-                    self.person_repo.save(new_person)
 
             if rule:
                 self.processed_registry.register_processed(filename, rule.name, "confirmed")

@@ -25,6 +25,7 @@ Table relints {
   conteudo TEXT
   metodo_extracao TEXT [default: 'Ollama (IA)']
   editado_usuario INTEGER [default: 0]
+  tipos_local TEXT // JSON: categorização livre do tipo de local (ex: ["Propriedade Rural", "Via Pública"])
 }
 
 // --- TABLE: relint_imagens ---

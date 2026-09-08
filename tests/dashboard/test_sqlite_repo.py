@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from backend.core.entities import IncidentReport, Person
+from backend.core.entities import IncidentReport, Participant, Person
 from backend.database.sqlite_repo import SqliteRepo
 from backend.database.sqlite_person_repo import SqlitePersonRepo
 
@@ -54,6 +54,31 @@ def test_sqlite_repo_crud(tmp_path: Path):
     assert deleted is True
     assert repo.exists_by_source_file("relint_test_01.pdf") is False
     assert len(repo.get_all()) == 0
+
+
+def test_participante_sem_documento_real_nao_expoe_nome_como_documento(tmp_path: Path):
+    """Achado do usuário (2026-09): abrindo um RELINT, a lista de participantes mostrava o
+    próprio nome na área de documento. Causa: _build_report_from_row() lia pessoas.documento
+    direto, sem a blindagem contra a chave sintética (nome em minúsculo) que
+    sqlite_person_repo.py já tinha — RELINT id 628 real (Kevin Rodrigues de Almeida) reproduz
+    exatamente esse caso, participante sem RG/CPF extraído pela LLM."""
+    db_file = tmp_path / "test_participante_documento.db"
+    repo = SqliteRepo(db_file)
+
+    report = IncidentReport(
+        source_file="relint_participante_sem_doc.pdf",
+        subject="OCORRÊNCIA",
+        content="Texto.",
+        participants=[
+            Participant(name="Kevin Rodrigues de Almeida", document=None, participation_type="Acusado"),
+        ],
+    )
+    doc_id = repo.save(report)
+
+    fetched = repo.get_by_id(doc_id)
+    assert fetched is not None
+    assert len(fetched.participants) == 1
+    assert fetched.participants[0].document == ""
 
 
 def test_location_types_persiste_no_banco(tmp_path: Path):

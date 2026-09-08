@@ -7,6 +7,7 @@ Roda uma vez só, contra um banco já com o schema aplicado (alembic upgrade hea
 Não é um importador recorrente — a planilha deixa de ser a fonte da verdade depois disto
 (confirmado com o usuário).
 """
+import argparse
 import csv
 import json
 import re
@@ -16,6 +17,7 @@ from typing import Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 from backend.database.pessoas_models import (
     Pessoa, PessoaFoto, Qrb, GrupoCriminoso, GrupoFamiliar, Veiculo,
@@ -40,6 +42,45 @@ DADOS_AJ_CAMPOS = [
 
 def _clean_doc(raw: str) -> str:
     return re.sub(r"[.\-\s]", "", raw or "")
+
+
+# documento SEMPRE precisa ser um número de RG ou CPF (decisão do usuário) — nunca texto livre.
+# A coluna RG da planilha às vezes tem texto explicativo ("Sem RG no RS"), data de nascimento
+# marcada "D/N", ou RG+CPF colados na mesma célula ("RG 575755568/SP - CPF 46603439875",
+# "11686372957 (cpf)"). _parse_documento() extrai só o número válido; quando não há nenhum,
+# quem chama cai no fallback já estabelecido (nome em minúsculo).
+_RG_LABEL_PATTERN = re.compile(r"\brg\s*[:\-]?\s*(\d[\d.\-\s]{4,})", re.IGNORECASE)
+_CPF_LABEL_PATTERN = re.compile(r"\bcpf\s*[:\-]?\s*(\d[\d.\-\s]{4,})", re.IGNORECASE)
+_TRAILING_LABEL_PATTERN = re.compile(r"^\s*(\d[\d.\-\s]{4,}?)\s*\((rg|cpf)\)\s*$", re.IGNORECASE)
+
+
+def _parse_documento(raw: str) -> "tuple[str, Optional[str]]":
+    """Retorna (documento_valido_ou_vazio, cpf_extra_ou_none)."""
+    raw = (raw or "").strip()
+    if not raw:
+        return "", None
+
+    if raw.lower().startswith("d/n") or "data de nascimento" in raw.lower():
+        return "", None  # data de nascimento na coluna errada, nunca é documento
+
+    rg_match = _RG_LABEL_PATTERN.search(raw)
+    cpf_match = _CPF_LABEL_PATTERN.search(raw)
+    if rg_match:
+        return _clean_doc(rg_match.group(1)), (_clean_doc(cpf_match.group(1)) if cpf_match else None)
+    if cpf_match:
+        return _clean_doc(cpf_match.group(1)), None
+
+    trailing_match = _TRAILING_LABEL_PATTERN.match(raw)
+    if trailing_match:
+        return _clean_doc(trailing_match.group(1)), None
+
+    # Sem rótulo: só aceita se o valor inteiro já for essencialmente numérico (caso majoritário),
+    # com tamanho plausível de RG/CPF (5-11 dígitos) e não for um placeholder óbvio tipo "00000...".
+    digits_only = _clean_doc(raw)
+    if digits_only.isdigit() and 5 <= len(digits_only) <= 11 and len(set(digits_only)) > 1:
+        return digits_only, None
+
+    return "", None  # texto livre sem nenhum número de documento identificável
 
 
 def _ler_csv(nome: str):
@@ -76,10 +117,16 @@ def importar_criminosos(session: Session) -> Dict[str, int]:
 
         dados_aj = {k: (row.get(k) or "").strip() for k in DADOS_AJ_CAMPOS if (row.get(k) or "").strip()}
 
+        # documento precisa ser sempre um número (RG ou CPF) — nunca texto livre da planilha.
+        documento_valido, cpf_extra = _parse_documento(rg_raw)
+        if cpf_extra:
+            dados_aj["CPF"] = cpf_extra
+        documento_final = documento_valido if documento_valido else nome.lower()
+
         pessoa = Pessoa(
             nome=nome,
             alcunha=(row.get("Alcunha") or "").strip() or None,
-            documento=chave,
+            documento=documento_final,
             dados_aj=json.dumps(dados_aj, ensure_ascii=False) if dados_aj else None,
         )
         session.add(pessoa)
@@ -240,12 +287,100 @@ def importar_pivots(session: Session, rg_para_pessoa_id, qrb_externa_para_id, gr
     session.commit()
 
 
+PIVOS_PESSOA = [
+    PessoaFoto, PessoaGrupoCriminoso, PessoaGrupoFamiliar, PessoaQrb, PessoaVeiculo,
+]
+
+
+def mesclar_duplicatas_por_nome_e_documento(session: Session) -> int:
+    """
+    Corrige o efeito de duplicação entre-fontes (App-AJ x participantes extraídos de RELINTs):
+    quando a mesma pessoa (mesmo nome) aparece 2x com o MESMO documento, só formatado de
+    forma diferente (com/sem pontuação), mescla em um único registro — repontando vínculos
+    (pivots do módulo Pessoas + relint_participantes, via SQL puro pois essa tabela pertence
+    ao motor de RELINT, fora do SQLModel), completando campos vazios e apagando o duplicado.
+
+    Não mescla nomes iguais com DÍGITOS diferentes no documento (RG vs CPF genuinamente
+    diferentes, ou possível homônimo) — fica pra revisão manual, ver
+    docs/proposals/gerenciador-pessoas-app-aj.md.
+
+    Idempotente: rodar de novo sem duplicatas não muda nada. Pode ser chamado tanto ao final
+    de uma importação nova quanto isoladamente contra um banco já populado (--dedupe).
+    """
+    pessoas = session.exec(select(Pessoa)).all()
+    por_nome: Dict[str, list] = {}
+    for p in pessoas:
+        por_nome.setdefault((p.nome or "").strip().lower(), []).append(p)
+
+    mesclados = 0
+    for nome, membros in por_nome.items():
+        if len(membros) < 2:
+            continue
+        por_digitos: Dict[str, list] = {}
+        for m in membros:
+            digitos = re.sub(r"\D", "", m.documento or "")
+            if digitos:
+                por_digitos.setdefault(digitos, []).append(m)
+
+        for digitos, subgrupo in por_digitos.items():
+            if len(subgrupo) < 2:
+                continue
+            subgrupo.sort(key=lambda m: 0 if (m.documento or "").isdigit() else 1)
+            vencedor, *perdedores = subgrupo
+
+            for perdedor in perdedores:
+                print(f"Mesclando duplicata: {nome!r} id={perdedor.id} ({perdedor.documento!r}) -> id={vencedor.id}")
+
+                for modelo in PIVOS_PESSOA:
+                    for vinculo in session.exec(select(modelo).where(modelo.pessoa_id == perdedor.id)).all():
+                        vinculo.pessoa_id = vencedor.id
+                        session.add(vinculo)
+                session.execute(
+                    text("UPDATE relint_participantes SET pessoa_id = :vencedor WHERE pessoa_id = :perdedor"),
+                    {"vencedor": vencedor.id, "perdedor": perdedor.id},
+                )
+
+                if not vencedor.alcunha and perdedor.alcunha:
+                    vencedor.alcunha = perdedor.alcunha
+                if not vencedor.antecedentes and perdedor.antecedentes:
+                    vencedor.antecedentes = perdedor.antecedentes
+                if perdedor.dados_aj:
+                    dados_vencedor = json.loads(vencedor.dados_aj) if vencedor.dados_aj else {}
+                    for k, v in json.loads(perdedor.dados_aj).items():
+                        dados_vencedor.setdefault(k, v)
+                    vencedor.dados_aj = json.dumps(dados_vencedor, ensure_ascii=False)
+                if not vencedor.documento.isdigit():
+                    vencedor.documento = digitos
+                session.add(vencedor)
+
+                session.delete(perdedor)
+                mesclados += 1
+
+    session.commit()
+    return mesclados
+
+
 def main():
+    parser_cli = argparse.ArgumentParser()
+    parser_cli.add_argument(
+        "--dedupe", action="store_true",
+        help="Só roda a mesclagem de duplicatas (nome + documento equivalente) contra o banco atual, sem reimportar.",
+    )
+    args = parser_cli.parse_args()
+
     engine = get_pessoas_engine(DB_PATH)
+
+    if args.dedupe:
+        with Session(engine) as session:
+            n = mesclar_duplicatas_por_nome_e_documento(session)
+            print(f"Mesclagem concluída: {n} duplicata(s) resolvida(s).")
+        return
+
     with Session(engine) as session:
         ja_importado = session.exec(select(Pessoa)).first()
         if ja_importado:
             print("Já existem pessoas no banco — importação já rodou antes, abortando (migração é única).")
+            print("Use --dedupe para só mesclar duplicatas contra o banco atual.")
             return
 
         rg_para_pessoa_id = importar_criminosos(session)
@@ -265,6 +400,12 @@ def main():
 
         importar_pivots(session, rg_para_pessoa_id, qrb_externa_para_id, grupo_crim_para_id, grupo_fam_para_id, placa_para_id)
         print("Vínculos (pessoa_qrb, pessoa_grupo_familiar, pessoa_grupo_criminoso, pessoa_veiculo) importados.")
+
+        # Rede de segurança: se já houver participantes de RELINTs processados antes desta
+        # importação (mesma pessoa, documento equivalente), mescla em vez de deixar duplicado.
+        n = mesclar_duplicatas_por_nome_e_documento(session)
+        if n:
+            print(f"Duplicatas entre-fontes mescladas: {n}.")
 
 
 if __name__ == "__main__":

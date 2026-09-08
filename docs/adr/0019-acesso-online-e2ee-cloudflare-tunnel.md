@@ -1,6 +1,6 @@
 # ADR-0019: Acesso Online com E2EE (Cloudflare Tunnel)
 
-- Status: Aceita
+- Status: **Substituída pela [ADR-0106](./0106-acesso-da-equipe-via-vpn-em-malha-sem-expor-o-sistema.md)** (acesso passou a ser por VPN em malha, sem expor o sistema na internet — o TLS do túnel terminava na borda do provedor, o que não atende ao requisito de nenhum servidor de terceiro no caminho dos dados)
 - Data: não registrada
 
 ## Contexto

@@ -17,7 +17,7 @@ Os números **ADR-010 a ADR-016 não existem** neste índice de propósito: são
 | 0009 | Suíte de Testes 100% Mockada | Aceita | [0009-suite-testes-100-mockada.md](./0009-suite-testes-100-mockada.md) |
 | 0017 | Remoção da Tabela de Municípios (Cálculo On-The-Fly) | Aceita | [0017-remocao-tabela-municipios.md](./0017-remocao-tabela-municipios.md) |
 | 0018 | Migração de Streamlit para FastAPI + Frontend Custom | Aceita | [0018-migracao-streamlit-fastapi-frontend-custom.md](./0018-migracao-streamlit-fastapi-frontend-custom.md) |
-| 0019 | Acesso Online com E2EE (Cloudflare Tunnel) | Aceita | [0019-acesso-online-e2ee-cloudflare-tunnel.md](./0019-acesso-online-e2ee-cloudflare-tunnel.md) |
+| 0019 | Acesso Online com E2EE (Cloudflare Tunnel) | Substituída pela ADR-0106 | [0019-acesso-online-e2ee-cloudflare-tunnel.md](./0019-acesso-online-e2ee-cloudflare-tunnel.md) |
 | 0020 | Descarte da Associação Automática de Fotos a Participantes | Aceita | [0020-descarte-associacao-automatica-fotos-participantes.md](./0020-descarte-associacao-automatica-fotos-participantes.md) |
 | 0021 | Remoção Completa do Streamlit | Aceita | [0021-remocao-completa-streamlit.md](./0021-remocao-completa-streamlit.md) |
 | 0022 | Especialidades Polimórficas (Homicídios) | Aceita | [0022-especialidades-polimorficas-homicidios.md](./0022-especialidades-polimorficas-homicidios.md) |
@@ -104,3 +104,4 @@ Os números **ADR-010 a ADR-016 não existem** neste índice de propósito: são
 | 0103 | Correção Pendente — `get_participant_dossier()` Sem `return` no Caminho de Sucesso | Proposta | [0103-correcao-pendente-return-ausente-dossie-participante.md](./0103-correcao-pendente-return-ausente-dossie-participante.md) |
 | 0104 | `LlmParticipantsExtractor` — Pass Dedicado para Participantes, Dividido por Tipo de Confiança | Aceita | [0104-llm-participants-extractor-pass-dedicado.md](./0104-llm-participants-extractor-pass-dedicado.md) |
 | 0105 | "Limpar Base & Reprocessar Tudo" Nunca Mais Afeta o Módulo Gerenciador de Pessoas | Aceita | [0105-limpar-base-nunca-afeta-modulo-pessoas.md](./0105-limpar-base-nunca-afeta-modulo-pessoas.md) |
+| 0106 | Acesso da Equipe via VPN em Malha, sem Expor o Sistema na Internet (substitui a ADR-0019) | Aceita | [0106-acesso-da-equipe-via-vpn-em-malha-sem-expor-o-sistema.md](./0106-acesso-da-equipe-via-vpn-em-malha-sem-expor-o-sistema.md) |

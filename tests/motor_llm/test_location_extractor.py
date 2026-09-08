@@ -11,10 +11,13 @@ from backend.engine.extractors.llm.extractors.location_extractor import (
     dms_to_decimal,
     enforce_rs_coordinate_signs,
     extract_battalion_mentions,
+    extract_municipality_from_context,
+    format_google_standard_address,
     normalize_line_broken_sign,
     resolve_battalion_by_municipality,
     resolve_police_unit,
     text_contains,
+    validate_municipality,
 )
 from backend.engine.extractors.llm.llm_processor import ILlmProcessor
 
@@ -193,6 +196,73 @@ def test_extract_assunto_municipality_wins_over_diverging_llm_answer():
     result = extractor.extract(text, filename="teste.pdf")
     assert result["municipality"].lower() == "santa bárbara do sul"
     assert result["municipality"].lower() != "panambi"
+
+
+def test_format_address_discards_sem_informacao_especifica_placeholder():
+    # Auditoria de 2026-09 (RELINT id 345 real): placeholder "Sem informação específica" vazava
+    # pro endereço composto em vez de ser descartado como os outros placeholders já eram.
+    address = format_google_standard_address(
+        street="Sem informação específica", number="", neighborhood="", municipality="Cruz Alta",
+    )
+    assert "sem informação específica" not in address.lower()
+
+
+def test_extract_discards_literal_null_string_from_llm_municipality():
+    # Auditoria de 2026-09 (RELINT id 313 real): sem cidade no ASSUNTO/filename, a LLM às vezes
+    # devolve a string literal "null" (não o JSON null) — não pode virar o valor do município.
+    text = "ASSUNTO: RESPOSTA AO PB 7561 - QUANTITATIVO DE PISTOLAS\nRelatório administrativo sem cidade específica."
+    extractor = LocationExtractor(FakeProcessor({
+        "street": None, "number": None, "neighborhood": None,
+        "municipality": "null", "coordinates": None, "map_url": None,
+    }))
+    result = extractor.extract(text, filename="teste.pdf")
+    assert result["municipality"] != "null"
+    assert result["municipality"] == ""
+
+
+def test_extract_municipality_ignores_earlier_em_occurrences_in_assunto():
+    # Auditoria de 2026-09 (RELINT id 631 real): assunto com mais de um "em" antes da cidade
+    # ("...em face de policial militar em serviço em Panambi - RS") capturava tudo entre o
+    # primeiro "em" e o único "- RS" do texto, em vez de só o nome da cidade.
+    text = (
+        "ASSUNTO: Prisão por lesão corporal leve em face de policial militar "
+        "em serviço em Panambi - RS"
+    )
+    assert extract_municipality_from_context(text) == "Panambi"
+
+
+def test_extract_municipality_ignores_earlier_em_occurrences_in_filename():
+    filename = "RELINT 001 - Prisão em face de policial em serviço em Panambi - RS.pdf"
+    assert extract_municipality_from_context("", filename=filename) == "Panambi"
+
+
+def test_validate_municipality_accepts_the_41_battalion_cities():
+    assert validate_municipality("Cruz Alta") == "Cruz Alta"
+
+
+def test_validate_municipality_accepts_other_rs_cities_via_ibge_list():
+    # Farroupilha é um município real do RS, mas fora da lista de 41 com BPM conhecido.
+    assert validate_municipality("Farroupilha") == "Farroupilha"
+
+
+def test_validate_municipality_rejects_non_municipality_text():
+    assert validate_municipality("Face De Policial Militar Em Serviço Em Panambi") == ""
+    assert validate_municipality("") == ""
+
+
+def test_extract_discards_municipality_that_is_not_a_real_city():
+    # Fim a fim: mesmo se o regex determinístico (ou a LLM) capturar algo que não é uma
+    # cidade real, o resultado final de municipality deve vir vazio, não o texto lixo.
+    text = (
+        "ASSUNTO: Prisão por lesão corporal leve em face de policial militar "
+        "em serviço em Cidade Que Não Existe No Rs - RS\nTexto do histórico."
+    )
+    extractor = LocationExtractor(FakeProcessor({
+        "street": None, "number": None, "neighborhood": None,
+        "municipality": None, "coordinates": None, "map_url": None,
+    }))
+    result = extractor.extract(text, filename="teste.pdf")
+    assert result["municipality"] == ""
 
 
 def test_extract_resolves_police_unit_deterministically_without_llm_field():

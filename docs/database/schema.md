@@ -9,7 +9,7 @@ Tabela central do sistema: cada linha corresponde a exatamente um documento RELI
 - Identificação do documento: `arquivo_origem`, `numero_registro`, `orgao_registro`, `ano_registro`.
 - Conteúdo interpretado: `assunto`, `fato_principal`, `data_fato`, `hora_fato`, `resumo`, `conteudo` (texto literal extraído do PDF).
 - Classificação: `grupo_bm` (categoria de crime, ex.: Homicídio, Prisão por Tráfico, Roubo de Veículo) e `tipo_relint` (ex.: Ocorrência, Disk Denúncia, Resposta a PB).
-- Geolocalização: `municipio`, `bairro`, `endereco`, `unidade_policial` (batalhão da Brigada Militar responsável), `coordenadas`, `url_mapa`.
+- Geolocalização: `municipio`, `bairro`, `endereco`, `unidade_policial` (batalhão da Brigada Militar responsável), `coordenadas`, `url_mapa`, `tipos_local` (JSON, categorização livre do tipo de local do fato — ex: `["Propriedade Rural", "Via Pública"]`, sem enum fechado).
 - Rastreabilidade e curadoria: `metodo_extracao` (`"Ollama (IA)"` ou `"Regex (Sem IA)"`, default `'Ollama (IA)'`) e `editado_usuario` (flag booleana — quando `1`, o registro foi editado manualmente por um curador humano e passa a ser imune a sobrescritas automáticas em reprocessamentos).
 
 ## Tabelas de Especialidade Polimórficas

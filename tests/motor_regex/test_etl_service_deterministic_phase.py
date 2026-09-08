@@ -107,3 +107,110 @@ def test_fase_b_nao_perde_tempo_recalculando_o_que_ja_foi_resolvido(monkeypatch)
     # main_fact não tem uma função dedicada para mockar (é derivação direta de 'summary'),
     # mas o valor final ainda precisa bater com o que já veio resolvido.
     assert report.main_fact == "JÁ_RESOLVIDO_FATO"
+
+
+class FakePipelineSemDataHora:
+    """Pass que não resolve date_of_fact/time_of_fact — aciona o fallback determinístico."""
+
+    def __init__(self, processor=None) -> None:
+        pass
+
+    def extract(self, text, filename="", rule=None, pre_extracted_entities=None, **kwargs) -> ExtractionResult:
+        return ExtractionResult(
+            data={"subject": "Assunto", "summary": "Resumo.", "content": text},
+            extraction_method="Ollama (IA)",
+            alerts=[],
+            success=True,
+        )
+
+
+class FakePipelineComParticipantes:
+    """Pass que resolve participantes — usado para travar que EtlService não usa mais
+    person_repo pra salvá-los (SqliteRepo.save() já cuida disso sozinho)."""
+
+    def __init__(self, processor=None) -> None:
+        pass
+
+    def extract(self, text, filename="", rule=None, pre_extracted_entities=None, **kwargs) -> ExtractionResult:
+        return ExtractionResult(
+            data={
+                "subject": "Assunto de teste",
+                "summary": "Resumo de teste.",
+                "content": text,
+                "participants": [
+                    {"name": "Fulano de Tal", "document": "123456789", "participation_type": "Acusado"},
+                ],
+            },
+            extraction_method="Ollama (IA)",
+            alerts=[],
+            success=True,
+        )
+
+
+def test_process_file_nao_usa_mais_person_repo_para_salvar_participantes(monkeypatch):
+    """Auditoria de 2026-09: EtlService tinha um segundo laço upsert via person_repo,
+    redundante com SqliteRepo.save() e com um bug de chave (documento sem limpar
+    pontuação), que duplicava a pessoa no banco. O laço foi removido — person_repo não
+    deve mais ser chamado dentro de process_file()."""
+    monkeypatch.setattr(etl_service_module, "LlmPipeline", FakePipelineComParticipantes, raising=False)
+    import backend.engine.extractors.llm.pipeline as llm_pipeline_module
+    monkeypatch.setattr(llm_pipeline_module, "LlmPipeline", FakePipelineComParticipantes)
+
+    mock_parser = Mock()
+    mock_parser.extract_text.return_value = "Texto de teste do RELINT."
+    mock_db = Mock()
+    mock_db.exists_by_source_file.return_value = False
+    mock_registry = Mock()
+    mock_registry.is_processed.return_value = False
+    mock_person_repo = Mock()
+
+    service = EtlService(
+        file_parser=mock_parser,
+        llm_processor=Mock(),
+        database_repo=mock_db,
+        processed_registry=mock_registry,
+        person_repo=mock_person_repo,
+        use_llm=True,
+    )
+    report = service.process_file(file_path=Path("dummy.pdf"), rule=RelintRule())
+
+    assert report is not None
+    assert len(report.participants) == 1
+    mock_person_repo.get_by_id.assert_not_called()
+    mock_person_repo.save.assert_not_called()
+    mock_person_repo.update.assert_not_called()
+    mock_db.save.assert_called_once()
+
+
+def test_fase_b_nao_grava_placeholder_nao_informado_quando_data_hora_vazias(monkeypatch):
+    """Auditoria de 2026-09: extract_date_of_fact()/extract_time_of_fact() vazios viravam a
+    string literal 'Não Informado' em vez de ficar vazio, vazando pro banco como se fosse um
+    valor real. O fallback determinístico não deve mais substituir por esse placeholder."""
+    monkeypatch.setattr(etl_service_module, "LlmPipeline", FakePipelineSemDataHora, raising=False)
+    import backend.engine.extractors.llm.pipeline as llm_pipeline_module
+    monkeypatch.setattr(llm_pipeline_module, "LlmPipeline", FakePipelineSemDataHora)
+    monkeypatch.setattr(etl_service_module, "extract_date_of_fact", lambda text: "")
+    monkeypatch.setattr(etl_service_module, "extract_time_of_fact", lambda text: "")
+
+    mock_parser = Mock()
+    mock_parser.extract_text.return_value = "Texto sem data nem hora reconhecíveis."
+    mock_db = Mock()
+    mock_db.exists_by_source_file.return_value = False
+    mock_registry = Mock()
+    mock_registry.is_processed.return_value = False
+
+    service = EtlService(
+        file_parser=mock_parser,
+        llm_processor=Mock(),
+        database_repo=mock_db,
+        processed_registry=mock_registry,
+        person_repo=Mock(),
+        use_llm=True,
+    )
+    report = service.process_file(file_path=Path("dummy.pdf"), rule=RelintRule())
+
+    assert report is not None
+    assert report.date_of_fact != "Não Informado"
+    assert report.time_of_fact != "Não Informado"
+    assert not report.date_of_fact
+    assert not report.time_of_fact

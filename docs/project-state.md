@@ -149,9 +149,13 @@ Este documento documenta o que já foi construído, o que está sendo finalizado
 - [ ] **Task 2.4 — Suíte de Testes Automatizados:**
   - Criação de testes unitários isolados para cada sub-extrator determinístico.
 
-### 🌐 FASE 3: Acesso Online Seguro & Infraestrutura
-- [ ] Configurar **Cloudflare Tunnel** para expor o FastAPI local via domínio fixo com HTTPS.
-- [ ] Implementar **Criptografia Ponta-a-Ponta (E2EE)** na camada da aplicação.
+### 🌐 FASE 3: Acesso da Equipe & Infraestrutura
+> Rumo alterado em 2026-09-08 (ver [ADR-0106](./adr/0106-acesso-da-equipe-via-vpn-em-malha-sem-expor-o-sistema.md), que substitui a ADR-0019): o acesso passa a ser por **VPN em malha (WireGuard)** em vez de expor o sistema via Cloudflare Tunnel — a hospedagem é a máquina local e os dados não podem trafegar por servidor de terceiro. Com isso, o item de E2EE na camada de aplicação deixa de ser necessário (a confidencialidade passa a vir da topologia de rede).
+
+- [ ] **Acesso por VPN em malha (WireGuard).** Escolher a ferramenta concreta: **Tailscale** (mais simples, dispensa abrir porta, plano de controle SaaS que não vê o payload, com migração futura pro **Headscale** self-hosted) ou **WireGuard puro** (zero terceiros desde já, exige porta UDP no roteador + DDNS + gestão manual de chaves).
+- [ ] **Sistema multiusuário (login/perfis) + log de auditoria** — hoje a API não tem autenticação nenhuma; dentro da VPN, "estar na malha" é a única credencial. Decidido postergar (ver Consequências da ADR-0106).
+- [ ] **Rotina de backup do `data/relints.db`** — máquina local hospedando é ponto único de falha. Decidido postergar.
+- [ ] **Rodar como serviço do Windows** em vez de app de desktop (`start_web.py` / painel PyQt6) — hoje logout, suspensão ou reinício derrubam o acesso da equipe.
 
 ## 3. Backlog Futuro (Planejado / Aguardando Ordem de Execução)
 - [ ] **Dashboard Público Anonimizado (Hostinger):**

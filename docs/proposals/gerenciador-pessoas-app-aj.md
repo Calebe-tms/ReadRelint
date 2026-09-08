@@ -82,6 +82,30 @@ Registrado agora como próximo passo confirmado (2026-09-07): interface no Svelt
 - [x] ORM: `sqlmodel` + `alembic`, só para este módulo — motor de RELINT sem mudança (ver ADR-0102).
 - [x] Banco de teste apagado e recriado do zero via Alembic + bootstrap do motor de RELINT.
 
+## Correção adicional: texto vazando no campo `documento` (2026-09-08)
+
+Usuário reportou "o sistema está colocando texto na área dos documentos". Duas causas distintas:
+
+1. **`_build_report_from_row()` (`sqlite_repo.py`)** — ao montar a lista de participantes de um RELINT, lia `pessoas.documento` sem a blindagem contra a chave sintética (nome em minúsculo) que `sqlite_person_repo.py`/`participants.py` já tinham desde a eliminação de `chave_pessoa`. Corrigido com o mesmo padrão (`documento == nome.lower() → ""`). Teste: `tests/dashboard/test_sqlite_repo.py::test_participante_sem_documento_real_nao_expoe_nome_como_documento`.
+2. **Dados de origem da planilha App-AJ** — a coluna RG tinha texto livre em 5 dos 1693 registros: `"D/N 10/04/2002"` (data de nascimento na coluna errada), `"Sem RG no RS"`, `"fg"` (linha de teste/lixo na planilha), `"RG 575755568/SP - CPF 46603439875"` (RG+CPF colados) e `"11686372957 (cpf)"` (CPF rotulado). **Regra confirmada com o usuário: `documento` sempre precisa ser um número, RG ou CPF — nunca texto.** `scripts/import_app_aj_data.py` ganhou `_parse_documento()`: extrai RG/CPF rotulados (mesmo colados), aceita CPF quando é o único número disponível, descarta datas de nascimento marcadas "D/N", e cai no fallback do nome em minúsculo quando não há nenhum número válido. Os 5 registros já importados foram corrigidos **em memória, sem apagar o banco** (preserva os RELINTs reais processados desde a última recriação) — `575755568`/`46603439875` (RG/CPF separados em `dados_aj`) para Wanderson, `11686372957` para João Vitor, fallback pro nome para os outros 3.
+
+## Correção adicional: pessoas duplicadas + revarredura do App-AJ (2026-09-08)
+
+Usuário pediu uma varredura geral do banco. Achado grave: `EtlService.process_file()` salvava cada participante **duas vezes** — `SqliteRepo.save()` (correto, já grava `pessoas`+`relint_participantes`) e um segundo laço redundante via `person_repo` (`SqlitePersonRepo`) que só existia por causa da funcionalidade antiga de dossiê. O segundo laço tinha um bug de chave: usava o documento **sem limpar pontuação** como identificador, então divergia do que o primeiro caminho já tinha salvo — criava uma pessoa duplicada em vez de atualizar. `linked_relints`/`aliases`/`photos` que esse laço alterava em memória nunca eram persistidos de verdade (são recalculados de `relint_participantes` na leitura), então o laço não fazia nada além de duplicar. **Removido inteiramente** — `SqliteRepo.save()` já é suficiente. Teste: `tests/motor_regex/test_etl_service_deterministic_phase.py::test_process_file_nao_usa_mais_person_repo_para_salvar_participantes`.
+
+**Banco corrigido em memória** (sem reprocessar): 9 pessoas duplicadas mescladas (vínculos com RELINTs/grupos/veículos repontados pro registro vencedor, campos complementares — alcunha/antecedentes/dados_aj — mesclados, duplicata apagada). `_parse_documento()` do script de importação também ganhou um filtro pra placeholders numéricos óbvios (`"0000000000000"`) e tamanho máximo (11 dígitos) — revarredura dos 1693 registros do App-AJ com a versão corrigida achou e consertou mais 6 casos que a correção anterior (mais pontual) tinha deixado passar: 2 datas de nascimento na coluna de RG, 1 "0" solto, 1 caso "2020" e 3 valores "00000...".
+
+**5 casos de nome duplicado com documentos genuinamente diferentes ficaram sem mesclar** (decisão consciente — risco real de juntar duas pessoas diferentes num sistema de inteligência policial):
+- `ADRIANE RODRIGUES MACIEL` (id 28, RG `1116326446` × id 1737, CPF `04082571051`)
+- `Erick Luan Ferreira Vilanova` (id 1174, RG `5133660034` × id 1640, CPF `05221952025`)
+- `GABRIEL XAVIER ANTUNES` (id 1688, RG `7115296969` × id 1750, CPF `84994172020`)
+- `LUCIANO DE QUADROS` (id 638, RG `9064774731` × id 1141, RG `1121835738`)
+- `teste` (ids 919/920/1019 — linhas de teste/rascunho da própria planilha original, documentos `001`/`0000`/`0101`)
+
+Total: **1757 → 1748 pessoas** (9 mescladas). Integridade referencial de todas as tabelas pivot verificada após a mesclagem (sem órfãos). 219 testes passando.
+
+**A mesclagem virou parte oficial de `scripts/import_app_aj_data.py`** (não ficou só como comando avulso rodado no terminal): `mesclar_duplicatas_por_nome_e_documento()` — mesma nome+dígitos-do-documento equivalentes → mescla; nome igual com dígitos diferentes → não mexe, fica pra revisão manual. Roda automaticamente ao final de uma importação nova (rede de segurança contra duplicata entre-fontes) e também isoladamente contra o banco atual via `python scripts/import_app_aj_data.py --dedupe` (idempotente — rodar sem duplicata nenhuma não muda nada, testado contra o banco já mesclado: 0 encontradas). Se o banco for recriado do zero, o `--dedupe` (ou a importação normal) já entrega o resultado tratado, sem precisar repetir os comandos manuais desta sessão.
+
 ## Itens em aberto (não bloqueiam o que já foi feito)
 
 - [ ] Caminho de destino para fotos de veículos e QRB (só pessoas foi definido).

@@ -36,6 +36,28 @@ class TestBmClassifier:
         )
         assert result == "Homicídio"
 
+    def test_ignora_homicidio_mencionado_apenas_nos_antecedentes(self):
+        # Auditoria de 2026-09 (RELINT id 599 real): suspeito "possui antecedentes por
+        # homicídio" classificava o RELINT inteiro como Homicídio mesmo sendo um caso de
+        # estupro de vulnerável — antecedentes descrevem o passado da pessoa, não o fato atual.
+        result = classify_bm_group(
+            subject="Estupro de vulnerável em Iraí - RS",
+            content=(
+                "A guarnição atendeu ocorrência de possível estupro de vulnerável. "
+                "Rodrigo de Souza possui antecedentes por homicídio, duas ocorrências de "
+                "ameaça, lesão corporal e dano."
+            ),
+        )
+        assert result != "Homicídio"
+
+    def test_ainda_classifica_homicidio_quando_e_o_fato_relatado(self):
+        # Garante que a exclusão de "antecedentes por X" não engula homicídios de verdade.
+        result = classify_bm_group(
+            subject="Ocorrência em Cruz Alta",
+            content="A vítima foi encontrada morta, constatado homicídio no local do fato.",
+        )
+        assert result == "Homicídio"
+
     # --- Tráfico ---
     def test_trafico_por_subject(self):
         result = classify_bm_group(subject="Prisão por Tráfico de Drogas em Cruz Alta")
