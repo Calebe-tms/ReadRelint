@@ -56,6 +56,31 @@ def test_sqlite_repo_crud(tmp_path: Path):
     assert len(repo.get_all()) == 0
 
 
+def test_location_types_persiste_no_banco(tmp_path: Path):
+    """Auditoria de 2026-09: location_types era calculado pelo LocationExtractor mas nunca
+    salvo no banco (coluna nem existia) — SqliteRepo agora persiste e recarrega o campo."""
+    db_file = tmp_path / "test_location_types.db"
+    repo = SqliteRepo(db_file)
+
+    report = IncidentReport(
+        source_file="relint_location_types.pdf",
+        subject="OCORRÊNCIA",
+        content="Texto.",
+        location_types=["Propriedade Rural", "Via Pública"],
+    )
+    doc_id = repo.save(report)
+
+    fetched = repo.get_by_id(doc_id)
+    assert fetched is not None
+    assert fetched.location_types == ["Propriedade Rural", "Via Pública"]
+
+    # Sem location_types: fica lista vazia, não erro/None.
+    report_sem = IncidentReport(source_file="relint_sem_location_types.pdf", content="Texto.")
+    doc_id_sem = repo.save(report_sem)
+    fetched_sem = repo.get_by_id(doc_id_sem)
+    assert fetched_sem.location_types == []
+
+
 def test_get_all_survives_homicide_report_without_registry_number(tmp_path: Path):
     """
     Regressão: `_build_report_from_row` tinha um fallback (linhas 555-558) que chamava
@@ -135,3 +160,33 @@ def test_sqlite_person_repo_crud(tmp_path: Path):
 
 
 
+
+
+def test_clear_all_wipes_relints_but_never_touches_pessoas(tmp_path: Path):
+    """
+    Regressão: o botão "Limpar Base & Reprocessar Tudo" do painel desktop só pode afetar
+    a leitura de RELINTs. A tabela `pessoas` também é a base do módulo Gerenciador de
+    Pessoas (dados importados da planilha App-AJ, independentes de qualquer RELINT) —
+    `SqliteRepo.clear_all()` nunca pode apagá-la.
+    """
+    db_file = tmp_path / "test_relints.db"
+    repo = SqliteRepo(db_file)
+    person_repo = SqlitePersonRepo(db_file)
+
+    report = IncidentReport(
+        source_file="relint_para_limpar.pdf",
+        subject="FURTO QUALQUER",
+        summary="Resumo qualquer.",
+        content="Conteúdo qualquer."
+    )
+    repo.save(report)
+
+    person = Person(person_id="12345678900", name="Pessoa do Gerenciador")
+    person_repo.save(person)
+
+    repo.clear_all()
+
+    assert repo.get_all() == []
+    survivor = person_repo.get_by_id("12345678900")
+    assert survivor is not None
+    assert survivor.name == "Pessoa do Gerenciador"

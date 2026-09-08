@@ -1253,7 +1253,8 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Aviso de Reset Completo",
-            "Isso limpará permanentemente o banco relacional, os contatos extraídos e as mídias.\n\nDeseja prosseguir?",
+            "Isso limpará permanentemente os RELINTs, seus vínculos de participantes e as mídias extraídas.\n"
+            "O módulo Gerenciador de Pessoas (App-AJ) não é afetado.\n\nDeseja prosseguir?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
         if reply == QMessageBox.StandardButton.Yes:

@@ -159,19 +159,20 @@ class MainController:
 
     def reset_and_reprocess_all(self):
         """
-        Interrompe o monitoramento, limpa o banco de dados SQLite, a tabela de pessoas,
-        o registro de histórico e a pasta de mídias extraídas, e reinicia a leitura
-        completa de todos os arquivos da pasta selecionada.
+        Interrompe o monitoramento, limpa APENAS os dados de RELINTs (relatórios, imagens,
+        especialidades e vínculos de participantes), o registro de histórico e a pasta de
+        mídias extraídas, e reinicia a leitura completa de todos os arquivos da pasta
+        selecionada. NUNCA afeta o módulo Gerenciador de Pessoas (tabela `pessoas` e demais
+        tabelas do App-AJ) — só a extração/leitura de RELINTs é reprocessada.
         """
         self.log("🔄 Iniciando Reset Completo da Base de Dados e Re-leitura de RELINTs...")
         if self.is_monitoring:
             self.stop_monitoring()
 
-        # 1. Limpa o banco de dados relacional
+        # 1. Limpa o banco de dados relacional (só RELINTs — pessoas nunca é tocada)
         try:
             self.db_repo.clear_all()
-            self.person_repo.clear_all()
-            self.log("🧹 Banco de dados relacional (relints.db) zerado.")
+            self.log("🧹 Banco de dados relacional de RELINTs (relints.db) zerado.")
         except Exception as exc:
             self.log(f"⚠️ Aviso ao limpar banco: {exc}")
 

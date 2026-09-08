@@ -11,14 +11,15 @@ Em vez de uma única chamada monolítica pedindo 15+ campos em um só JSON pesad
 3. **Classificação determinística de `bm_group`** (`backend/engine/cleaners/bm_classifier.py`, `classify_bm_group()`): roda entre o Pass 2 e o Pass 3, sem LLM, priorizando nome do arquivo + assunto sobre o conteúdo completo como fallback.
 4. **Pass 3 — Especialidade** (`extractors/specialty_extractor.py`, classe `SpecialtyExtractor`): resolve os campos adicionais da especialidade identificada pelo `bm_group`. Campos binários/enum simples (`injured_victims`, `hostage_victim`, `recovered`, `location_type`) são resolvidos 100% por regex, sem LLM; campos livres genuinamente nuançados usam um schema Pydantic minúsculo específico daquela especialidade (`schemas/specialty_schemas.py`). Especialidades sem nenhum campo livre (`Roubo a Residência`, `Furto Qualificado`, `Outros`) nunca chamam a LLM.
 5. **Pass dedicado — Registro Policial em Outro Órgão** (`extractors/registry_extractor.py`, classe `RegistryExtractor`, schema `RegistryExtraction`): resolve `registry_number`/`registry_agency`/`registry_year` — um registro em outro órgão (DP/DPPA/Polícia Civil), campo raro e desconexo do número do próprio RELINT. Busca restrita ao corpo narrativo pós-`ANEXOS:` (nunca o cabeçalho, onde vive o número do próprio RELINT), guardrail de evidência literal (`text_contains`) e reclassificação determinística por contagem de dígitos (órgão ~6 dígitos, ano 4 dígitos, número raramente >4 — a ordem dos 3 números no texto não é confiável, o tamanho é). Ver ADR-0100.
+6. **Pass dedicado — Participantes** (`extractors/llm_participants_extractor.py`, classe `LlmParticipantsExtractor`, schema `ParticipantsExtraction`): resolve a lista de vítimas/testemunhas/autores-suspeitos do fato. Divide o trabalho por tipo de confiança — a LLM só resolve `name`/`participation_type`/`background` (julgamento narrativo genuíno); `nickname` e `document` são resolvidos deterministicamente por proximidade textual ao nome já extraído, reaproveitando `extract_nickname()`/`extract_document_near_name()` (`deterministic/participants/role_detector.py`). Guardrail de evidência literal (`text_contains`) descarta qualquer nome sem sustentação no texto; guardrail anti-PM/instituição reaproveita `is_blacklisted_name()` (`deterministic/participants/negative_filters.py`) por cima da instrução do prompt. Ver ADR-0104.
 
-O resultado de cada pass é combinado em `result.data` dentro de `LlmPipeline.extract()`, com os passes 2, 3 e o de Registro sempre sobrescrevendo incondicionalmente os campos que produzem (mesmo com valor vazio), para que uma resposta sem guardrail nunca vaze quando o pass dedicado corretamente absteve-se por falta de evidência.
+O resultado de cada pass é combinado em `result.data` dentro de `LlmPipeline.extract()`, com os passes 2, 3, o de Registro e o de Participantes sempre sobrescrevendo incondicionalmente os campos que produzem (mesmo com valor vazio), para que uma resposta sem guardrail nunca vaze quando o pass dedicado corretamente absteve-se por falta de evidência.
 
 Fora do `LlmPipeline` propriamente dito, dois campos são resolvidos em `EtlService.process_file()` de forma incondicional (mesma lógica para os dois motores, LLM e determinístico):
 - **`relint_type`**: `classify_relint_type()` (`backend/engine/cleaners/bm_classifier.py`), mesmo padrão de 2 camadas do `classify_bm_group()` — filename+assunto primeiro, conteúdo como fallback. Fallback final é `"Ocorrência"` (caso majoritário real), não `"Outros"`.
 - **`main_fact`**: derivado sem nenhuma chamada nova — `main_fact = summary`.
 
-> O antigo "Pass 1 legado" (chamada genérica via `rule.get_schema_model()`, tipicamente `IncidentReport`) foi removido. Dos 6 campos que só ele fornecia, **só `participants` continua sem substituto** — o mais complexo, pendente de desenho próprio (fica com o default `[]` do Pydantic até lá). Os outros 5 (`registry_number`/`registry_agency`/`registry_year`, `date_of_fact`/`time_of_fact`, `relint_type`, `location_types`, `main_fact`) já foram reconstruídos — ver [`../proposals/eliminacao-pass1-legado.md`](../proposals/eliminacao-pass1-legado.md). `participants` **não** cai automaticamente no fallback determinístico por regex (`extract_fallback_participants`) — esse fallback em `EtlService` é reservado exclusivamente ao modo 100% sem-IA (`extraction_method == "Regex (Sem IA)"`), para manter as duas chamadas (LLM e determinística) totalmente separadas.
+> O antigo "Pass 1 legado" (chamada genérica via `rule.get_schema_model()`, tipicamente `IncidentReport`) foi removido. Os 6 campos que só ele fornecia já foram todos reconstruídos, `participants` incluído (`LlmParticipantsExtractor`, ADR-0104) — ver [`../proposals/eliminacao-pass1-legado.md`](../proposals/eliminacao-pass1-legado.md), proposta encerrada. `participants` **não** cai automaticamente no fallback determinístico por regex (`extract_fallback_participants`) quando o pass da LLM retorna vazio — esse fallback em `EtlService` é reservado exclusivamente ao modo 100% sem-IA (`extraction_method == "Regex (Sem IA)"`), para manter as duas chamadas (LLM e determinística) totalmente separadas (ADR-0099).
 
 ## Estrutura de pastas do motor LLM
 
@@ -27,23 +28,26 @@ backend/engine/extractors/llm/
 ├── pipeline.py              # LlmPipeline — orquestrador dos passes
 ├── llm_processor.py         # ILlmProcessor — porta/interface abstrata
 ├── ollama_client.py         # OllamaClient — adapter concreto que fala com o Ollama local
-├── extractors/               # Um extrator por pass (Summary, Location, Specialty, Registry)
+├── extractors/               # Um extrator por pass (Summary, Location, Specialty, Registry, Participants)
 │   ├── summary_extractor.py
 │   ├── location_extractor.py
 │   ├── specialty_extractor.py
-│   └── registry_extractor.py
+│   ├── registry_extractor.py
+│   └── llm_participants_extractor.py
 ├── schemas/                  # JSON Schemas Pydantic dinâmicos, por pass/especialidade
 │   ├── summary_schema.py
 │   ├── location_schema.py
 │   ├── address_schema.py
 │   ├── specialty_schemas.py
-│   └── registry_schema.py
+│   ├── registry_schema.py
+│   └── participants_schema.py
 ├── prompts/                   # Prompts especializados por pass
 │   ├── system_prompt.py
 │   ├── summary_prompt.py
 │   ├── address_prompt.py
 │   ├── specialty_prompts.py
-│   └── registry_prompt.py
+│   ├── registry_prompt.py
+│   └── participants_prompt.py
 ├── validators/
 │   └── llm_response_validator.py   # Sanitização e normalização de saída da LLM
 └── rules/                     # 7 classes Rule especializadas (HomicideRule etc.) — não usadas
@@ -67,6 +71,8 @@ Mesmo nos passes que chamam a LLM, uma camada de validação/normalização 100%
 - **Detecção por regex com checagem de negação**: no Pass 3, campos binários (`injured_victims`, `hostage_victim`, `recovered`) são resolvidos por regex que verifica se há uma negação ("não", "sem") na mesma oração do termo encontrado, evitando falsos positivos de negação em oração anterior (`_has_negation_nearby()`).
 - **Restrição de busca ao corpo narrativo**: `RegistryExtractor` busca o registro em outro órgão só no texto pós-`ANEXOS:` (`extract_history_from_annex()`), nunca no cabeçalho — evita confundir com o número do próprio RELINT.
 - **Reclassificação determinística por contagem de dígitos**: `classify_registry_digits()` (`registry_extractor.py`) reordena `registry_number`/`registry_agency`/`registry_year` pelo tamanho em dígitos (órgão ~6, ano 4, número raramente >4), já que a LLM às vezes devolve os 3 valores na ordem errada — o tamanho é mais confiável que a posição no texto.
+- **Blacklist anti-PM/instituição reaproveitada do motor determinístico**: `LlmParticipantsExtractor` aplica `is_blacklisted_name()` (`deterministic/participants/negative_filters.py`) sobre cada nome retornado pela LLM — reuso direto de utilitário puro e sem estado, não um mecanismo de fallback entre motores (ADR-0104/ADR-0085/ADR-0099 continuam respeitadas).
+- **Enriquecimento determinístico por proximidade ao nome**: `LlmParticipantsExtractor` resolve `nickname`/`document` sem pedir isso à LLM, reaproveitando `extract_nickname()`/`extract_document_near_name()` (`deterministic/participants/role_detector.py`) — a LLM só decide `name`/`participation_type`/`background`, que exigem julgamento narrativo genuíno.
 
 Ver também a especificação exaustiva das 9 camadas de sanitização geográfica em ADR-090 (`docs/adr/`).
 
@@ -75,9 +81,11 @@ Ver também a especificação exaustiva das 9 camadas de sanitização geográfi
 - **`SummaryExtraction`** (`schemas/summary_schema.py`): campos `subject` e `summary`.
 - **`LocationExtraction`** (`schemas/location_schema.py`): campos de endereço (`street`, `number`, `neighborhood`, `municipality`, `coordinates`, `map_url`); `police_unit` não é mais perguntado à LLM (100% determinístico).
 - **Schemas de especialidade** (`schemas/specialty_schemas.py`): um schema minúsculo por `bm_group` — `HomicideSpecialtyExtraction`, `DrugTraffickingSpecialtyExtraction`, `EstablishmentRobberySpecialtyExtraction`, `VehicleSpecialtyExtraction` (reaproveitado por Roubo e Furto de Veículo), `PedestrianRobberySpecialtyExtraction`.
+- **`RegistryExtraction`** (`schemas/registry_schema.py`): campos `registry_number`, `registry_agency`, `registry_year`.
+- **`ParticipantsExtraction`** (`schemas/participants_schema.py`): lista de `ParticipantEntry` (`name`, `participation_type`, `background`) — `nickname`/`document` não são perguntados à LLM (resolvidos deterministicamente por proximidade ao nome).
 
 ## Documentação relacionada
 
 - Fluxo ETL completo: [`../architecture/data-flow.md`](../architecture/data-flow.md)
 - Motor determinístico (sem IA): [`deterministic-pipeline.md`](./deterministic-pipeline.md)
-- ADRs relevantes: ADR-088 (arquitetura multi-pass), ADR-089/090 (blindagem geográfica), ADR-091/092/093 (correções de localização), ADR-094/095 (extração de especialidades em 2 estágios), ADR-096 (próxima etapa) — em `docs/adr/`
+- ADRs relevantes: ADR-088 (arquitetura multi-pass), ADR-089/090 (blindagem geográfica), ADR-091/092/093 (correções de localização), ADR-094/095 (extração de especialidades em 2 estágios), ADR-096/099/100 (eliminação do Pass 1 legado), ADR-0104 (`LlmParticipantsExtractor`) — em `docs/adr/`

@@ -1,6 +1,6 @@
 # Proposta: Eliminação do Pass 1 Legado (Monolítico) e Quebra em Passes Dedicados
 
-> Status: **Quase totalmente implementada.** O Pass 1 legado foi removido de `LlmPipeline.extract()` (e a lógica associada de `_strip_superseded_fields`/`SUPERSEDED_LEGACY_FIELDS` em `ollama_client.py`, que ficou morta). Dos 6 campos que só ele fornecia (seção 1, abaixo), **5 já foram reconstruídos**: `registry_number`/`registry_agency`/`registry_year` (`RegistryExtractor`, ADR-0100), `date_of_fact`/`time_of_fact` (determinístico incondicional), `relint_type` (`classify_relint_type()`), `location_types` (campo extra no `LocationExtractor`) e `main_fact` (derivado do `summary`). **Só `participants` continua sem substituto** — fica com o default do Pydantic (`[]`) até o desenho de passes dedicados. Decisão adicional confirmada com o usuário e formalizada em [ADR-0099](../adr/0099-isolamento-estrito-motores-sem-fallback-cruzado.md): nenhum campo cai de volta em fallback determinístico enquanto estiver no modo Ollama (IA) — nem `participants` (`extract_fallback_participants`) nem `summary` no caso extremo do próprio guardrail do `SummaryExtractor` falhar (`extract_fallback_summary`). Sem recall entre os dois motores por enquanto; a ADR-0099 documenta o plano de, no futuro (motor determinístico maduro), inverter isso com uma chamada de segurança explícita do regex para a LLM.
+> Status: **Implementada por completo — proposta encerrada.** O Pass 1 legado foi removido de `LlmPipeline.extract()` (e a lógica associada de `_strip_superseded_fields`/`SUPERSEDED_LEGACY_FIELDS` em `ollama_client.py`, que ficou morta). Os 6 campos que só ele fornecia (seção 1, abaixo) foram todos reconstruídos: `registry_number`/`registry_agency`/`registry_year` (`RegistryExtractor`, ADR-0100), `date_of_fact`/`time_of_fact` (determinístico incondicional), `relint_type` (`classify_relint_type()`), `location_types` (campo extra no `LocationExtractor`), `main_fact` (derivado do `summary`) e `participants` (`LlmParticipantsExtractor`, ADR-0104 — último item, fechado nesta sessão). Decisão adicional confirmada com o usuário e formalizada em [ADR-0099](../adr/0099-isolamento-estrito-motores-sem-fallback-cruzado.md): nenhum campo cai de volta em fallback determinístico enquanto estiver no modo Ollama (IA) — nem `participants` (`extract_fallback_participants`) nem `summary` no caso extremo do próprio guardrail do `SummaryExtractor` falhar (`extract_fallback_summary`). Sem recall entre os dois motores por enquanto; a ADR-0099 documenta o plano de, no futuro (motor determinístico maduro), inverter isso com uma chamada de segurança explícita do regex para a LLM.
 > Decisão de princípio confirmada com o usuário: **não é objetivo reduzir o número de chamadas à LLM** — o objetivo é quebrar em passes mais especializados para aumentar a qualidade/confiabilidade da extração, usando determinismo (regex) sempre que o campo for formulaico o suficiente, e LLM só onde há julgamento genuíno de contexto.
 
 ---
@@ -29,7 +29,7 @@ O objetivo desta próxima etapa é **eliminar esse Pass 1 legado por completo**,
 | `registry_number`, `registry_agency`, `registry_year` | ✅ **Implementado** — novo pass LLM dedicado (`RegistryExtractor`, `backend/engine/extractors/llm/extractors/registry_extractor.py`), com guardrail de evidência literal (`text_contains`, reaproveitado de `location_extractor.py`), busca restrita ao corpo narrativo pós-`ANEXOS:` (nunca o cabeçalho, onde vive o número do próprio RELINT) e reclassificação determinística por contagem de dígitos (órgão ~6 dígitos, ano 4 dígitos, número do registro raramente >4 — heurística fornecida pelo usuário, já que a ORDEM dos 3 números no texto não é confiável). Ver ADR-0100. | Não é formulaico o bastante para regex único (varia por órgão/época, ordem inconsistente), mas é um dado tipo "serial" — fácil de validar contra o texto bruto uma vez isolado o trio de números certo. |
 | `location_types` | ✅ **Implementado** — sem pass novo: campo adicionado ao schema `LocationExtraction` já existente (`LocationExtractor` roda toda vez, não custa uma chamada extra). Sem guardrail de evidência literal (é categorização de contexto, não citação do texto); só filtra placeholders, dedupe e limita a 5 categorias. | Categorização livre (ex: "Propriedade Rural", "Escolas") sem enum fechado — exige julgamento de contexto genuíno. |
 | `main_fact` | ✅ **Implementado** — derivado sem chamada nova: `main_fact = summary` (mesma derivação simples que o `DeterministicPipeline` já usava há tempos), aplicado incondicionalmente em `EtlService.process_file()` para os dois motores. | Conceitualmente já é uma combinação do que os outros passes resolvem; uma chamada LLM extra aqui não resolveria ambiguidade real. |
-| `participants` | **Removido do Pass 1 legado agora.** Fica sem extração até o desenho dos passes novos de participantes (próxima etapa, fora do escopo desta proposta). | Vai virar seu próprio conjunto de passes dedicados — não faz sentido adivinhar o formato agora. |
+| `participants` | ✅ **Implementado** — novo pass LLM dedicado (`LlmParticipantsExtractor`, `backend/engine/extractors/llm/extractors/llm_participants_extractor.py`), com guardrail de evidência literal (`text_contains`) e blacklist anti-PM/instituição reaproveitada do motor determinístico (`is_blacklisted_name()`). `nickname`/`document` não são perguntados à LLM — resolvidos deterministicamente por proximidade ao nome, reaproveitando `extract_nickname()`/`extract_document_near_name()`. Ver ADR-0104. | LLM só decide `name`/`participation_type`/`background`, que exigem julgamento narrativo genuíno; `nickname`/`document` são "dado serial" localizável por proximidade — mesmo raciocínio já aplicado a `registry_number`. |
 
 ---
 
@@ -38,20 +38,19 @@ O objetivo desta próxima etapa é **eliminar esse Pass 1 legado por completo**,
 O Pass 1 legado deixa de existir. Em seu lugar:
 
 - **3 mecanismos determinísticos** (sem LLM, ✅ todos implementados): `date_of_fact`/`time_of_fact`, `classify_relint_type()` (novo), `classify_bm_group()` (já existente).
-- **2 passes LLM novos e minúsculos**: "Dados de Registro" (✅ implementado, `RegistryExtractor`) e "Tipos de Local" (✅ implementado — sem pass novo, campo extra no `LocationExtractor`).
+- **3 passes LLM novos e minúsculos**: "Dados de Registro" (✅ implementado, `RegistryExtractor`), "Tipos de Local" (✅ implementado — sem pass novo, campo extra no `LocationExtractor`) e "Participantes" (✅ implementado, `LlmParticipantsExtractor`).
 - **1 derivação sem chamada**: `main_fact` (✅ implementado).
-- **`participants` fica de fora**, pendente de desenho próprio — o único campo do Pass 1 legado ainda sem substituto.
 
-Isso aumenta o número de passes LLM (não reduz — decisão deliberada), mas cada um extremamente focado, seguindo a mesma filosofia de guardrails já aplicada em `LocationExtractor` e `SpecialtyExtractor` nesta sessão.
+Isso aumenta o número de passes LLM (não reduz — decisão deliberada), mas cada um extremamente focado, seguindo a mesma filosofia de guardrails já aplicada em `LocationExtractor` e `SpecialtyExtractor` nesta sessão. **Todos os 6 campos do Pass 1 legado foram redistribuídos — proposta encerrada.**
 
 ---
 
-## 4. Perguntas em Aberto para a Próxima Sessão
+## 4. Perguntas em Aberto (todas resolvidas)
 
-- [ ] Desenho dos passes novos de extração de `participants` (quantos passes? um só ou quebrado por sub-concern, ex: identificação vs. antecedentes/documentos?).
-- [ ] Nome/organização dos novos arquivos: seguir o padrão `backend/engine/extractors/llm/extractors/registry_extractor.py`, `location_types_extractor.py`? Ou agrupar em um único arquivo dado o tamanho pequeno de cada schema?
-- [ ] Onde colocar `classify_relint_type()` — no mesmo `bm_classifier.py` (renomear?) ou em módulo próprio?
-- [ ] Confirmar que `main_fact` realmente não precisa de nenhuma lógica adicional além de reaproveitar `subject`/`bm_group`, ou se merece uma pequena função determinística de formatação.
+- [x] Desenho do pass novo de extração de `participants`: 1 pass só, dividido por tipo de confiança (LLM decide `name`/`participation_type`/`background`; `nickname`/`document` resolvidos deterministicamente por proximidade ao nome).
+- [x] Nome/organização dos novos arquivos: seguiu o padrão `registry_extractor.py` — `llm_participants_extractor.py` (nome escolhido pelo usuário, com prefixo `llm_` pra não colidir com `deterministic/participants/participant_extractor.py`).
+- [x] `classify_relint_type()` ficou no mesmo `bm_classifier.py`, sem renomear.
+- [x] `main_fact` não precisou de lógica adicional — `main_fact = summary` foi suficiente.
 
 ---
 
@@ -62,7 +61,7 @@ Isso aumenta o número de passes LLM (não reduz — decisão deliberada), mas c
 - [x] Criar o pass "Dados de Registro" (schema + extractor + prompt) — `RegistryExtractor`, ver ADR-0100.
 - [x] Criar o pass "Tipos de Local" — sem pass novo, `location_types` adicionado ao schema `LocationExtraction` já existente.
 - [x] Resolver `main_fact` por derivação (`main_fact = summary`).
-- [ ] Remover `participants` do Pass 1 legado (sem substituto ainda) — **único item pendente**.
+- [x] Criar o pass "Participantes" (schema + extractor + prompt) — `LlmParticipantsExtractor`, ver ADR-0104.
 - [x] Remover o Pass 1 legado inteiro de `LlmPipeline.extract()` e do `ollama_client.py` (`_strip_superseded_fields` removido junto) — ver ADR-0096/0099.
-- [x] Atualizar testes (`tests/test_rules.py` revisado para o novo número de chamadas à LLM).
-- [ ] Desenhar e implementar os passes novos de `participants` (escopo à parte, a discutir) — próxima e última etapa desta proposta.
+- [x] Atualizar testes (`tests/motor_llm/test_rules.py` revisado para o novo número de chamadas à LLM — agora 5).
+- [x] Suíte de testes dedicada em `tests/motor_llm/test_llm_participants_extractor.py` (11 testes).

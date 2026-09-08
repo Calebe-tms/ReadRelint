@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 from typing import List, Optional, Any
@@ -55,7 +56,8 @@ class SqliteRepo(IDatabaseRepo):
                     resumo TEXT,
                     conteudo TEXT,
                     metodo_extracao TEXT DEFAULT 'Ollama (IA)',
-                    editado_usuario INTEGER DEFAULT 0
+                    editado_usuario INTEGER DEFAULT 0,
+                    tipos_local TEXT
                 );
             """)
 
@@ -102,6 +104,8 @@ class SqliteRepo(IDatabaseRepo):
                 cursor.execute("ALTER TABLE relints ADD COLUMN orgao_registro TEXT;")
             if "ano_registro" not in cols:
                 cursor.execute("ALTER TABLE relints ADD COLUMN ano_registro TEXT;")
+            if "tipos_local" not in cols:
+                cursor.execute("ALTER TABLE relints ADD COLUMN tipos_local TEXT;")
 
             # 2. Especialização de Homicídios (1 para 1 com relints)
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='homicide_details';")
@@ -308,6 +312,7 @@ class SqliteRepo(IDatabaseRepo):
         content = report.content or ""
         extraction_method = getattr(report, "extraction_method", None) or "Regex (Sem IA)"
         user_edited = 1 if getattr(report, "user_edited", False) else 0
+        location_types = json.dumps(getattr(report, "location_types", None) or [], ensure_ascii=False)
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -318,9 +323,10 @@ class SqliteRepo(IDatabaseRepo):
                     arquivo_origem, numero_registro, orgao_registro, ano_registro,
                     assunto, fato_principal, data_fato, hora_fato,
                     grupo_bm, tipo_relint, municipio, bairro, endereco,
-                    unidade_policial, coordenadas, url_mapa, resumo, conteudo, metodo_extracao, editado_usuario
+                    unidade_policial, coordenadas, url_mapa, resumo, conteudo, metodo_extracao, editado_usuario,
+                    tipos_local
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(arquivo_origem) DO UPDATE SET
                     numero_registro=excluded.numero_registro,
                     orgao_registro=excluded.orgao_registro,
@@ -340,12 +346,14 @@ class SqliteRepo(IDatabaseRepo):
                     resumo=excluded.resumo,
                     conteudo=excluded.conteudo,
                     metodo_extracao=excluded.metodo_extracao,
-                    editado_usuario=excluded.editado_usuario;
+                    editado_usuario=excluded.editado_usuario,
+                    tipos_local=excluded.tipos_local;
             """, (
                 source_file, reg_num, reg_agency, reg_year,
                 subject, main_fact, date_of_fact, time_of_fact,
                 bm_group, relint_type, municipality, neighborhood, address,
-                police_unit, coordinates, map_url, summary, content, extraction_method, user_edited
+                police_unit, coordinates, map_url, summary, content, extraction_method, user_edited,
+                location_types
             ))
 
             cursor.execute("SELECT id FROM relints WHERE arquivo_origem = ?;", (source_file,))
@@ -570,6 +578,13 @@ class SqliteRepo(IDatabaseRepo):
         ext_method = relint_row["metodo_extracao"] if ("metodo_extracao" in relint_row.keys() and relint_row["metodo_extracao"]) else "Regex (Sem IA)"
         user_edited = bool(relint_row["editado_usuario"]) if "editado_usuario" in relint_row.keys() else bool(relint_row["user_edited"])
 
+        location_types = []
+        if "tipos_local" in relint_row.keys() and relint_row["tipos_local"]:
+            try:
+                location_types = json.loads(relint_row["tipos_local"])
+            except (TypeError, ValueError):
+                location_types = []
+
         report_data = {
             "id": str(relint_id),
             "source_file": source_file,
@@ -588,6 +603,7 @@ class SqliteRepo(IDatabaseRepo):
             "police_unit": police_unit or "",
             "coordinates": coordinates or "",
             "map_url": map_url or "",
+            "location_types": location_types,
             "summary": summary or "",
             "content": content or "",
             "extraction_method": ext_method,
@@ -752,12 +768,14 @@ class SqliteRepo(IDatabaseRepo):
 
     def clear_all(self) -> None:
         """
-        Remove todos os registros das tabelas de relatórios.
+        Remove todos os registros das tabelas de RELINTs (relatórios, imagens, especialidades
+        e vínculos de participantes — todos com ON DELETE CASCADE em relints.id). NUNCA apaga
+        `pessoas`: essa tabela hoje também é a base do módulo Gerenciador de Pessoas (dados
+        importados da planilha App-AJ, independentes de qualquer RELINT).
         """
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM relints;")
-            cursor.execute("DELETE FROM pessoas;")
             conn.commit()
 
     def get_all_source_filenames(self) -> set:

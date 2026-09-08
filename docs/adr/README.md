@@ -102,3 +102,5 @@ Os números **ADR-010 a ADR-016 não existem** neste índice de propósito: são
 | 0101 | Gerenciador de Pessoas — Schema de Importação do App-AJ | Aceita | [0101-gerenciador-pessoas-schema-importacao-app-aj.md](./0101-gerenciador-pessoas-schema-importacao-app-aj.md) |
 | 0102 | SQLModel + Alembic para o Módulo Gerenciador de Pessoas | Aceita | [0102-sqlmodel-alembic-modulo-gerenciador-pessoas.md](./0102-sqlmodel-alembic-modulo-gerenciador-pessoas.md) |
 | 0103 | Correção Pendente — `get_participant_dossier()` Sem `return` no Caminho de Sucesso | Proposta | [0103-correcao-pendente-return-ausente-dossie-participante.md](./0103-correcao-pendente-return-ausente-dossie-participante.md) |
+| 0104 | `LlmParticipantsExtractor` — Pass Dedicado para Participantes, Dividido por Tipo de Confiança | Aceita | [0104-llm-participants-extractor-pass-dedicado.md](./0104-llm-participants-extractor-pass-dedicado.md) |
+| 0105 | "Limpar Base & Reprocessar Tudo" Nunca Mais Afeta o Módulo Gerenciador de Pessoas | Aceita | [0105-limpar-base-nunca-afeta-modulo-pessoas.md](./0105-limpar-base-nunca-afeta-modulo-pessoas.md) |

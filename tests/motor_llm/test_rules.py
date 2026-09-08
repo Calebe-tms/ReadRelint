@@ -42,8 +42,8 @@ def test_etl_service_with_rule_skips_processing():
     # Não deve retornar None pois não há mais descarte
     assert report is not None
     assert report.content == "Furto de veículo na garagem da residência."
-    # Pipeline multi-pass: Síntese, Localização, Especialidade e Registro (sem o Pass 1 legado)
-    assert mock_llm.process_text.call_count == 4
+    # Pipeline multi-pass: Síntese, Localização, Especialidade, Registro e Participantes (sem o Pass 1 legado)
+    assert mock_llm.process_text.call_count == 5
     mock_db.save.assert_called_once()
     assert len(filtered_calls) == 0
     assert len(sent_calls) == 1
@@ -79,8 +79,8 @@ def test_etl_service_with_rule_processes_matching_file():
     
     assert report is not None
     assert report.content == "Suspeito desferiu tiros e cometeu homicídio."
-    # Pipeline multi-pass: Síntese, Localização, Especialidade e Registro (sem o Pass 1 legado)
-    assert mock_llm.process_text.call_count == 4
+    # Pipeline multi-pass: Síntese, Localização, Especialidade, Registro e Participantes (sem o Pass 1 legado)
+    assert mock_llm.process_text.call_count == 5
     # O banco de dados deve ter sido salvo
     mock_db.save.assert_called_once()
     assert len(filtered_calls) == 0
@@ -121,8 +121,8 @@ def test_etl_service_with_rule_discards_post_llm_false_positive():
     
     assert report is not None
     assert report.content == "Foi registrado um homicídio consumado no local."
-    # Pipeline multi-pass: Síntese, Localização, Especialidade e Registro (sem o Pass 1 legado)
-    assert mock_llm.process_text.call_count == 4
+    # Pipeline multi-pass: Síntese, Localização, Especialidade, Registro e Participantes (sem o Pass 1 legado)
+    assert mock_llm.process_text.call_count == 5
     mock_db.save.assert_called_once()
     assert len(filtered_calls) == 0
     assert len(sent_calls) == 1

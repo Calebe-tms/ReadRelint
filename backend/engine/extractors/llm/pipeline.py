@@ -17,6 +17,7 @@ from backend.engine.extractors.llm.extractors.summary_extractor import SummaryEx
 from backend.engine.extractors.llm.extractors.location_extractor import LocationExtractor
 from backend.engine.extractors.llm.extractors.specialty_extractor import ALL_SPECIALTY_FIELDS, SpecialtyExtractor
 from backend.engine.extractors.llm.extractors.registry_extractor import RegistryExtractor
+from backend.engine.extractors.llm.extractors.llm_participants_extractor import LlmParticipantsExtractor
 
 
 class LlmPipeline(IExtractor):
@@ -30,6 +31,7 @@ class LlmPipeline(IExtractor):
         self.location_extractor = LocationExtractor(self.processor)
         self.specialty_extractor = SpecialtyExtractor(self.processor)
         self.registry_extractor = RegistryExtractor(self.processor)
+        self.llm_participants_extractor = LlmParticipantsExtractor(self.processor)
 
     def extract(
         self,
@@ -104,6 +106,11 @@ class LlmPipeline(IExtractor):
             result.data["registry_number"] = registry_data.get("registry_number", "")
             result.data["registry_agency"] = registry_data.get("registry_agency", "")
             result.data["registry_year"] = registry_data.get("registry_year", "")
+
+            # Pass dedicado: Participantes (último campo pendente do antigo Pass 1 legado —
+            # ver docs/proposals/eliminacao-pass1-legado.md). Sem fallback cruzado com o motor
+            # determinístico (ADR-0099): se este pass não achar ninguém, fica [] mesmo.
+            result.data["participants"] = self.llm_participants_extractor.extract(cleaned_text)
 
         except Exception as err:
             result.success = False
