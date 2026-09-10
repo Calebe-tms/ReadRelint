@@ -1,6 +1,7 @@
 """
 FastAPI Router para Gerenciamento de Participantes e Dossiês Consolidados de Envolvidos.
 """
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, computed_field
@@ -9,6 +10,40 @@ from backend.api.dependencies import get_person_repo
 from backend.database.person_repo import IPersonRepo
 
 router = APIRouter(prefix="/participants", tags=["participants"])
+
+# pessoa_fotos.caminho_arquivo guarda caminhos com prefixos de pasta legados e
+# inconsistentes entre si (ex: "pessoas_Images/", "CRIMINOSOS_Images/") — só a pasta
+# "pessoas_Images" existe de fato em disco. Resolvemos pelo nome do arquivo e conferimos
+# a existência real para não devolver URLs de fotos que nunca foram importadas.
+PESSOAS_IMAGES_DIR = Path(__file__).resolve().parents[3] / "data" / "pessoas_Images"
+
+
+def _fetch_pessoa_photos(cursor, pessoa_id: int) -> List[str]:
+    """Busca a galeria de fotos de uma pessoa (módulo Gerenciador de Pessoas) que existem em disco, em ordem.
+
+    A tabela `pessoa_fotos` é criada pela migração Alembic do módulo Gerenciador de Pessoas
+    (ADR-0102), não pelo schema base de `SqlitePersonRepo` — pode não existir ainda em bancos
+    novos/de teste que não passaram por essa migração.
+    """
+    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'pessoa_fotos';")
+    if not cursor.fetchone():
+        return []
+
+    cursor.execute("""
+        SELECT caminho_arquivo
+        FROM pessoa_fotos
+        WHERE pessoa_id = ?
+        ORDER BY ordem, id;
+    """, (pessoa_id,))
+    photos = []
+    for row in cursor.fetchall():
+        raw = row["caminho_arquivo"]
+        if not raw:
+            continue
+        filename = str(raw).replace("\\", "/").rsplit("/", 1)[-1]
+        if (PESSOAS_IMAGES_DIR / filename).is_file():
+            photos.append(f"/pessoas_images/{filename}")
+    return photos
 
 
 class LinkedRelintSummary(BaseModel):
@@ -140,15 +175,12 @@ def list_participants(
             rel_rows = cursor.fetchall()
 
             linked_relints = []
-            photos = []
-            main_photo = ""
+            photos = _fetch_pessoa_photos(cursor, p_id)
 
             for r in rel_rows:
                 f_path = r["caminho_foto"] or ""
                 if f_path and f_path not in photos:
                     photos.append(f_path)
-                    if not main_photo:
-                        main_photo = f_path
 
                 linked_relints.append(LinkedRelintSummary(
                     relint_id=r["relint_id"],
@@ -165,7 +197,7 @@ def list_participants(
                 nickname=nick,
                 document=doc,
                 background=bg,
-                photo_path=main_photo,
+                photo_path=photos[0] if photos else "",
                 photos=photos,
                 linked_relints_count=len(linked_relints),
                 linked_relints=linked_relints
@@ -218,15 +250,12 @@ def get_participant_dossier(
         rel_rows = cursor.fetchall()
 
         linked_relints = []
-        photos = []
-        main_photo = ""
+        photos = _fetch_pessoa_photos(cursor, p_id)
 
         for r in rel_rows:
             f_path = r["caminho_foto"] or ""
             if f_path and f_path not in photos:
                 photos.append(f_path)
-                if not main_photo:
-                    main_photo = f_path
 
             linked_relints.append(LinkedRelintSummary(
                 relint_id=r["relint_id"],
@@ -236,6 +265,19 @@ def get_participant_dossier(
                 participation_type=r["tipo_participacao"] or "Acusado",
                 municipality=r["municipio"] or ""
             ))
+
+        return PersonDossierDTO(
+            person_id=p_key,
+            name=name,
+            nickname=nick,
+            document=doc,
+            background=bg,
+            photo_path=photos[0] if photos else "",
+            photos=photos,
+            linked_relints_count=len(linked_relints),
+            linked_relints=linked_relints
+        )
+
 
 class PersonUpdateRequest(BaseModel):
     name: Optional[str] = None

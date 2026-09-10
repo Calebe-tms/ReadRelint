@@ -1,6 +1,6 @@
 # ADR-0103: Correção Pendente — `get_participant_dossier()` Sem `return` no Caminho de Sucesso
 
-- Status: Proposta
+- Status: Aceita (corrigida em 2026-09-10, durante a implementação de avatares em [ADR-0107](./0107-avatares-participantes-gerenciador-pessoas.md))
 - Data: 2026-09-07
 
 ## Contexto
@@ -11,10 +11,10 @@ Não foi pego antes porque a suíte de testes (`tests/modulo_pessoas/test_api_pa
 
 ## Decisão
 
-Ainda não implementada — usuário pediu para registrar a correção pendente sem aplicá-la agora. Quando for feita, a correção deve:
-1. Adicionar `return PersonDossierDTO(...)` ao final do caminho de sucesso de `get_participant_dossier()`, espelhando a construção já feita em `list_participants()` (mesmos campos: `person_id=p_key`, `name`, `nickname`, `document=doc` — já com a blindagem contra chave sintética da ADR-0101 —, `background=bg`, `photo_path=main_photo`, `photos`, `linked_relints_count`, `linked_relints`).
-2. Adicionar um teste que busque o dossiê de uma pessoa existente com sucesso (200), cobrindo o caminho hoje não testado.
+Corrigida durante a implementação de exibição de avatares (ADR-0107): adicionado `return PersonDossierDTO(...)` ao final do caminho de sucesso de `get_participant_dossier()`, espelhando a construção já feita em `list_participants()` (mesmos campos: `person_id=p_key`, `name`, `nickname`, `document=doc`, `background=bg`, `photo_path`, `photos`, `linked_relints_count`, `linked_relints`).
+
+Teste adicionado cobrindo o caminho antes não testado: `tests/modulo_pessoas/test_api_participants.py::test_get_participant_dossier_found`.
 
 ## Consequências
 
-Enquanto não corrigido, `GET /api/v1/participants/{person_id}` para uma pessoa existente falha em runtime (500), embora `GET /api/v1/participants` (lista) e o 404 funcionem normalmente — o bug só afeta a busca de dossiê individual bem-sucedida.
+`GET /api/v1/participants/{person_id}` para uma pessoa existente agora retorna 200 com o dossiê completo, em vez de falhar em runtime (500) como antes.

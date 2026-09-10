@@ -23,8 +23,10 @@ from backend.api.routers import relints, monitoring, events, participants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # Aponta para a raiz do projeto ReadRelint
 WEB_DIR = PROJECT_ROOT / "frontend" / "build"
 MEDIA_DIR = PROJECT_ROOT / "data" / "media"
+PESSOAS_IMAGES_DIR = PROJECT_ROOT / "data" / "pessoas_Images"
 
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+PESSOAS_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Aplicação FastAPI
@@ -49,6 +51,9 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 # Imagens extraídas dos PDFs servidas em /media/...
 app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
+
+# Fotos de participantes do Gerenciador de Pessoas servidas em /pessoas_images/...
+app.mount("/pessoas_images", StaticFiles(directory=str(PESSOAS_IMAGES_DIR)), name="pessoas_images")
 
 # Rotas da API REST
 app.include_router(relints.router, prefix="/api/v1")

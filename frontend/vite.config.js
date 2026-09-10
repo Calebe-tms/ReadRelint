@@ -20,7 +20,8 @@ export default defineConfig({
 				target: 'http://127.0.0.1:8000',
 				ws: true
 			},
-			'/media': 'http://127.0.0.1:8000'
+			'/media': 'http://127.0.0.1:8000',
+			'/pessoas_images': 'http://127.0.0.1:8000'
 		}
 	}
 });
