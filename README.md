@@ -15,5 +15,5 @@ Este projeto é um software local para Windows desenvolvido para monitorar e pro
 O projeto adota rigorosamente o padrão **Clean Architecture (Ports & Adapters)**. Para entender a estrutura física de arquivos e diretórios, o modelo de dados, o fluxo de processamento e as decisões arquiteturais, veja a documentação completa em [`docs/`](./docs/README.md).
 
 ## 📜 Regra de Idioma do Projeto
-* **Código-fonte:** Estritamente em **Inglês** (nomes de variáveis, funções, classes, arquivos, chaves JSON).
+* **Código-fonte:** - Estritamente em **Inglês** (nomes de variáveis, funções, classes, arquivos, chaves JSON).
 * **Documentação, Comentários, Logs e UI:** Estritamente em **Português do Brasil (pt-BR)**.
